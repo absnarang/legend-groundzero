@@ -1,0 +1,23 @@
+# Backend engine (separate repo: legend-intelligence)
+legend-lite/
+
+# Scratch / internal docs
+legend_lite_debrief.md
+opportunities.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Secrets
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
