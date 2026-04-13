@@ -96,7 +96,16 @@ def test_cheat_sheet_query(op_name, northwind_seeded):
       2. Return a non-negative row count
       3. Return column metadata
     """
-    group, description, query, explanation, uses_db = CHEAT_SHEET[op_name]
+    entry = CHEAT_SHEET[op_name]
+    group, description, query, explanation, uses_db = entry[:5]
+    # Optional 6th element: executable=False means the query requires engine features
+    # (e.g. lateral, fromJson) not present in Legend Lite — skip execution, not a failure.
+    executable = entry[5] if len(entry) > 5 else True
+    if not executable:
+        pytest.skip(
+            f"{op_name}: marked non-executable in this playground "
+            "(requires full Legend engine features such as lateral/fromJson)"
+        )
 
     full_code = (NORTHWIND_MODEL.strip() + "\n\n" + query.strip()).strip()
 

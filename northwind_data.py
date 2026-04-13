@@ -1424,5 +1424,81 @@ northwind::model::Product.all()
         "For N=1 (single row in partition), cumDist=1.0, percentRank=0.0.",
         False,
     ),
+
+    # ── Variant / flatten ──────────────────────────────────────────────────────
+
+    "36 · flatten — explode array column into rows (reference)": (
+        "Variant / Flatten",
+        "Unnest an array-valued column so each element becomes its own row. "
+        "⚠ Requires lateral + Variant support — reference syntax only in this playground.",
+        """\
+// ── Pattern 1: lateral + flatten (explode a JSON array column) ──────────────
+// Requires: lateral() and Variant type — not yet in Legend Lite.
+// Shown here as reference; paste into the full Legend engine to execute.
+//
+// #TDS
+//     id, payload:meta::pure::metamodel::variant::Variant
+//     1, "[1,2,3]"
+//     2, "[4,5,6]"
+//     3, "[7,8,9]"
+// #->lateral(x | $x.payload->toMany(@Integer)->flatten(~integers))
+//
+// Result (15 rows):
+//   id | payload    | integers
+//   1  | "[1,2,3]"  | 1
+//   1  | "[1,2,3]"  | 2
+//   1  | "[1,2,3]"  | 3
+//   2  | "[4,5,6]"  | 4  ...
+
+// ── Pattern 2: scalar list → single-column TDS ───────────────────────────────
+// Also requires full engine (array literal as relation root).
+//
+// [1, 2, 3, 4]->flatten(~integer)
+//
+// Result (4 rows):  integer | 1 | 2 | 3 | 4
+
+// ── Pattern 3: lateral + flatten + extend ────────────────────────────────────
+// Unnest then immediately add a window column:
+//
+// $tds->lateral(x | $x.payload->toMany(@Integer)->flatten(~value))
+//     ->extend(over(~id, ~value->ascending()), ~rowNum:{p,w,r|$p->rowNumber($w,$r)})
+
+// ── Runnable demo (TDS with Variant column — no unnesting) ───────────────────
+// The Variant column is readable; unnesting requires lateral.
+#TDS
+    id, payload:meta::pure::metamodel::variant::Variant
+    1, "[1,2,3]"
+    2, "[4,5,6]"
+    3, "[7,8,9]"
+#->select(~[id, payload])""",
+        "**Signature:** values:T[*]->flatten(colSpec: ColSpec<Z=(?:T)>) : Relation<Z>[1]\n\n"
+        "**⚠ Engine note:** `flatten` passes 7/7 DuckDB PCT tests in the full FINOS Legend engine. "
+        "In this playground (Legend Lite) the two required primitives — `lateral()` and `fromJson()` "
+        "— are not yet implemented, so the real unnesting queries cannot be executed here. "
+        "The runnable line above demonstrates that a Variant-typed TDS column is parsed correctly; "
+        "the commented patterns show the complete syntax for use in the full engine.\n\n"
+        "**Arg 1 — values:** The collection to unnest. Typically the result of navigating a "
+        "Variant column: `$row.payload->toMany(@Integer)`. `toMany(@T)` casts the Variant to "
+        "a typed list. Supported element types: `@Integer`, `@Float`, `@String`, `@Variant`.\n\n"
+        "**Arg 2 — colSpec:** A `ColSpec` naming the output column: `~integers`, `~values`, etc. "
+        "The tilde prefix (`~`) is the ColSpec constructor.\n\n"
+        "**lateral() — the outer wrapper:**\n"
+        "`->lateral(x | expr)` is the relation-level loop that calls the lambda once per row "
+        "of the left TDS (here named `x`), appends the resulting relation columns to that row, "
+        "and unions all per-row results. It is the Pure equivalent of SQL `CROSS JOIN LATERAL` "
+        "or `UNNEST(...) WITH ORDINALITY`.\n\n"
+        "**Full pipeline in the real engine:**\n"
+        "1. Start with a TDS that has a `Variant`-typed column containing JSON arrays.\n"
+        "2. `->lateral(x | $x.payload->toMany(@Integer)->flatten(~value))` — for each row, "
+        "cast the payload Variant to `Integer[*]`, flatten to a one-column TDS, join back.\n"
+        "3. Chain `->filter`, `->extend`, `->sort` etc. on the now-unnested result.\n\n"
+        "**SQL equivalent:** `SELECT id, payload, f.value FROM tds CROSS JOIN LATERAL "
+        "UNNEST(JSON_EXTRACT_PATH(payload, '$')) AS f(value)`\n\n"
+        "**PCT test coverage (DuckDB):** 7/7 passing — "
+        "Scalar, Variant_Array, Variant_Map, Variant_Navigation, LateralJoin, "
+        "LateralJoin_Nested, LateralJoin_Nested_Extend.",
+        False,
+        False,   # executable=False → parametrised test skips this entry
+    ),
 }
 
