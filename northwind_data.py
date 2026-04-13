@@ -1433,7 +1433,7 @@ northwind::model::Product.all()
         "⚠ Requires lateral + Variant support — reference syntax only in this playground.",
         """\
 // ── Pattern 1: lateral + flatten (explode a JSON array column) ──────────────
-// Requires: lateral() and Variant type — not yet in Legend Lite.
+// Requires: lateral() and Variant type — not yet in Legend Workbench.
 // Shown here as reference; paste into the full Legend engine to execute.
 //
 // #TDS
@@ -1473,7 +1473,7 @@ northwind::model::Product.all()
 #->select(~[id, payload])""",
         "**Signature:** values:T[*]->flatten(colSpec: ColSpec<Z=(?:T)>) : Relation<Z>[1]\n\n"
         "**⚠ Engine note:** `flatten` passes 7/7 DuckDB PCT tests in the full FINOS Legend engine. "
-        "In this playground (Legend Lite) the two required primitives — `lateral()` and `fromJson()` "
+        "In this playground (Legend Workbench) the two required primitives — `lateral()` and `fromJson()` "
         "— are not yet implemented, so the real unnesting queries cannot be executed here. "
         "The runnable line above demonstrates that a Variant-typed TDS column is parsed correctly; "
         "the commented patterns show the complete syntax for use in the full engine.\n\n"

@@ -99,7 +99,7 @@ def test_cheat_sheet_query(op_name, northwind_seeded):
     entry = CHEAT_SHEET[op_name]
     group, description, query, explanation, uses_db = entry[:5]
     # Optional 6th element: executable=False means the query requires engine features
-    # (e.g. lateral, fromJson) not present in Legend Lite — skip execution, not a failure.
+    # (e.g. lateral, fromJson) not present in Legend Workbench — skip execution, not a failure.
     executable = entry[5] if len(entry) > 5 else True
     if not executable:
         pytest.skip(

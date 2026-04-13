@@ -1048,8 +1048,8 @@ if st.session_state["_stage_pure"] is not None:
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Legend Lite Playground", layout="wide", page_icon="⚡")
-st.title("⚡ Legend Lite Playground")
+st.set_page_config(page_title="Legend Workbench", layout="wide", page_icon="⚡")
+st.title("⚡ Legend Workbench")
 st.caption("Pure ↔ SQL bidirectional sync  •  Edit either side and sync the other")
 
 if not check_health():
