@@ -2,7 +2,7 @@
 
 > **The definitive starting point for grounding AI agents in institutional data logic with zero friction**
 
-An interactive Streamlit playground that brings together the full Legend Intelligence engine — Pure language queries, real-time SQL compilation, and LLM-powered natural language querying — in a single zero-friction UI.
+**Legend Workbench** is an interactive Streamlit application that brings together the full Legend Intelligence engine — Pure language queries, real-time SQL compilation, LLM-powered natural language querying, and an interactive Pure function reference — in a single zero-friction UI.
 
 ---
 
@@ -10,11 +10,11 @@ An interactive Streamlit playground that brings together the full Legend Intelli
 
 Ground Zero is the **front door** to the Legend stack. Point it at a running [legend-intelligence](https://github.com/absnarang/legend-intelligence) backend and you get:
 
-- **Pure ↔ SQL bidirectional editor** — write Pure, see the exact generated SQL; edit SQL, get it translated back to Pure
+- **Pure ↔ SQL bidirectional editor** — write Pure, see the exact generated SQL; edit SQL, get it translated back
 - **Query executor** — run Pure queries against in-memory DuckDB, see results as a table
 - **NLQ tab** — type a question in plain English, get a runnable Pure query (Claude haiku/sonnet/opus via your Pro/Max subscription)
-- **Pre-built financial data model** — ETF/Mutual Fund model with Fund, Security, Holding, NAVRecord classes + realistic seed data
-- **Clickable example questions** — 7 sample NLQ questions for the ETF domain, 4 for Company/Person
+- **Cheat Sheet** — 36 interactive Pure function examples with full Legend-speak documentation, runnable against the live Northwind dataset
+- **Pre-built data models** — ETF/Mutual Fund (financial) and Northwind (relational) with realistic seed data
 
 ---
 
@@ -27,7 +27,7 @@ pip install streamlit requests pandas
 # 2. Start the legend-intelligence backend (port 8080)
 #    See: https://github.com/absnarang/legend-intelligence
 
-# 3. Run the playground
+# 3. Run the workbench
 streamlit run playground.py
 ```
 
@@ -43,7 +43,34 @@ Open **http://localhost:8501** in your browser.
 | **🗄️ Raw SQL** | Execute raw SQL directly against the DuckDB store |
 | **🌱 Seed Data** | View and run the SQL seed scripts to populate in-memory tables |
 | **🔍 NLQ** | Natural language → Pure query via the NLQ pipeline |
-| **📖 About** | Pure syntax quick reference + how the engine works |
+| **📚 Cheat Sheet** | 36 runnable Pure examples with full arg-level documentation |
+| **📖 About** | Pure syntax quick reference and how the engine works |
+
+---
+
+## Cheat Sheet
+
+The Cheat Sheet tab is a living Pure language reference built on top of the Northwind dataset (Categories, Products, Suppliers, Customers, Employees, Orders, OrderDetails). Every entry shows:
+
+- The **Pure query** — runnable against the live engine with one click
+- The **generated SQL** — so you can see exactly what the engine compiles to
+- A **"How it works"** expander — full Legend-speak documentation with function signature, each argument by name and type, SQL equivalent, and behavioral notes
+
+**36 entries across 9 groups:**
+
+| Group | Functions covered |
+|-------|------------------|
+| **Fundamentals** | `project`, `filter`, `sort`, `take`, filter-after-project, `distinct` |
+| **Aggregation** | `groupBy` (count, sum, avg+count, HAVING pattern) |
+| **Joins** | Navigation joins (1-hop, multi-hop, filter-through-association), explicit `join` (INNER, LEFT) |
+| **Column Manipulation** | `rename`, `select` |
+| **Set Operations** | `concatenate` (UNION ALL) |
+| **Slicing** | `drop`, `slice`, `first` |
+| **Window Functions** | `rank`, `denseRank`, `lag`, `lead`, running `sum`, `rowNumber`, `ntile`, `percentRank`, `cumulativeDistribution` |
+| **AsOf Joins** | `asOfJoin` with equality + time condition; time-only form |
+| **Variant / Flatten** | `flatten` — reference syntax (requires `lateral`/full engine; 7/7 DuckDB PCT) |
+
+All 35 executable entries are covered by an automated pytest suite (54 tests pass, 1 skipped for the reference-only flatten entry).
 
 ---
 
@@ -77,7 +104,7 @@ Which funds hold AAPL and what is its total weight across all ETFs?
 ## Architecture
 
 ```
-playground.py (Streamlit)
+playground.py  (Streamlit — Legend Workbench)
     │
     ├── POST /engine/plan      → Pure → SQL (compile only)
     ├── POST /engine/execute   → Pure → results
@@ -88,6 +115,15 @@ playground.py (Streamlit)
 ```
 
 ---
+
+## Running the Tests
+
+```bash
+# Backend must be running on port 8080 first
+pip install pytest requests
+pytest tests/test_northwind_cheatsheet.py -v
+# Expected: 54 passed, 1 skipped
+```
 
 ---
 
