@@ -1084,5 +1084,345 @@ northwind::model::Order.all()
         "**DateTime literal:** prefix with `%` — e.g. `%2024-01-15T10:30:00`.",
         False,
     ),
+
+    # ── Column manipulation ────────────────────────────────────────────────────
+
+    "24 · rename — rename a TDS column": (
+        "Column Manipulation",
+        "Rename one column in a TDS without touching any other columns.",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+->sort(~price->descending())
+->take(5)
+->rename(~price, ~unitPrice)""",
+        "**Signature:** ->rename(oldCol: ColSpec, newCol: ColSpec)\n\n"
+        "**Arg 1 — oldCol:** The existing column to rename, referenced with the tilde prefix: `~price`. "
+        "The tilde (`~`) is the ColSpec constructor in Pure — it selects a column by its alias name.\n\n"
+        "**Arg 2 — newCol:** The new name for that column, also written as a ColSpec: `~unitPrice`. "
+        "No lambda is involved — rename is purely a schema-level operation.\n\n"
+        "**Effect:** Only the column header changes. All other columns and all row values are preserved "
+        "exactly as-is. The renamed column keeps its position in the TDS.\n\n"
+        "**SQL equivalent:** `SELECT product, price AS unitPrice FROM ...`\n\n"
+        "**Typical use:** After `project()` produces a computed alias (e.g. `'price'`) you want to "
+        "standardise before passing downstream, or when `concatenate()` requires matching column names.",
+        True,
+    ),
+
+    "25 · select — narrow columns from a TDS": (
+        "Column Manipulation",
+        "Drop unwanted columns by selecting only the ones you need.",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice, p|$p.unitsInStock],
+          ['product','price','stock'])
+->filter({r | $r.price > 20.0})
+->select(~[product, price])""",
+        "**Signature:** ->select(cols: ColSpecArray)\n\n"
+        "**Arg 1 — cols:** A ColSpecArray listing every column to keep, written as `~[col1, col2, ...]`. "
+        "Use `~colName` (no brackets) when selecting a single column.\n\n"
+        "**Effect:** Returns a new TDS containing only the listed columns, in the order given. "
+        "Columns not listed are dropped. Row count is unchanged.\n\n"
+        "**SQL equivalent:** `SELECT product, price FROM (...)`  — a projection at the TDS level.\n\n"
+        "**Contrast with project():** `project()` maps class properties → TDS columns (with lambdas). "
+        "`select()` works on an already-projected TDS and simply removes columns — no lambdas needed.\n\n"
+        "**Typical use:** After a wide `project()` that computed many columns, narrow the result "
+        "before passing it to `groupBy()`, `concatenate()`, or an API boundary.",
+        True,
+    ),
+
+    # ── Set operations ─────────────────────────────────────────────────────────
+
+    "26 · concatenate — union two TDS vertically": (
+        "Set Operations",
+        "Stack two TDS with identical schemas on top of each other (UNION ALL).",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+->filter({r | $r.price > 30.0})
+->concatenate(
+    northwind::model::Product.all()
+    ->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+    ->filter({r | $r.price < 10.0})
+)""",
+        "**Signature:** ->concatenate(otherTDS: Relation<T>)\n\n"
+        "**Arg 1 — otherTDS:** The second TDS to append. It must have exactly the same column names "
+        "and compatible types as the first TDS. The schemas must match — use `rename()` or `select()` "
+        "to align them if necessary.\n\n"
+        "**Result:** A new TDS whose row count equals `|left| + |right|`. "
+        "Duplicates are *not* removed — this is UNION ALL, not UNION DISTINCT.\n\n"
+        "**SQL equivalent:** `SELECT ... FROM ... WHERE price > 30 UNION ALL SELECT ... WHERE price < 10`\n\n"
+        "**Ordering:** The result retains the original row order of each part (left rows first, "
+        "then right rows). Apply `->sort()` after if you need a global order.\n\n"
+        "**Typical use:** Combine two filtered subsets, merge historical + current data, "
+        "or assemble a multi-region result set before a single final sort/groupBy.",
+        True,
+    ),
+
+    # ── Explicit join ──────────────────────────────────────────────────────────
+
+    "27 · join — INNER join on predicate": (
+        "Joins",
+        "Explicit INNER join on an arbitrary boolean predicate — only matching rows on both sides survive.",
+        """\
+#TDS
+    emp, deptId
+    Alice, 1
+    Bob,   2
+    Carol, 1
+    Dave,  3
+#->join(
+    #TDS
+        deptId, deptName, budget
+        1, Engineering, 500000
+        2, Sales,       200000
+    #,
+    JoinType.INNER,
+    {a,b | $a.deptId == $b.deptId}
+)""",
+        "**Signature:** ->join(rightTDS, joinKind: JoinKind, condition: Lambda<Boolean>)\n\n"
+        "**Arg 1 — rightTDS:** The right-hand relation. Can be a TDS literal, a class query, "
+        "or any other relation expression.\n\n"
+        "**Arg 2 — joinKind:** One of `JoinType.INNER`, `JoinType.LEFT`, `JoinType.RIGHT`, "
+        "or `JoinType.FULL`. Controls which unmatched rows are kept.\n\n"
+        "**Arg 3 — condition:** A two-parameter lambda `{a,b | ...}` where `a` is a row from "
+        "the left TDS and `b` is a row from the right. Return a Boolean — typically an equality "
+        "like `$a.deptId == $b.deptId`, or a compound like `$a.k1 == $b.k1 && $a.k2 == $b.k2`.\n\n"
+        "**Result:** Left columns followed by all right columns. If column names clash (e.g. `deptId` "
+        "appears in both), both are kept — disambiguate downstream with `select()` or `rename()`.\n\n"
+        "**INNER semantics:** Only rows where the condition is `true` appear in the result. "
+        "Dave (deptId=3) is dropped because no right row has deptId=3.\n\n"
+        "**SQL equivalent:** `SELECT * FROM left INNER JOIN right ON left.deptId = right.deptId`\n\n"
+        "**vs association navigation:** Association navigation (`$p.category.categoryName`) compiles "
+        "to a LEFT JOIN implicitly. Use explicit `join()` when you need INNER, RIGHT, or FULL semantics, "
+        "or when joining two independent TDS expressions without a modelled association.",
+        False,
+    ),
+
+    "28 · join — LEFT join (keep all left rows)": (
+        "Joins",
+        "LEFT join preserves every left row; unmatched rows get null right-side columns.",
+        """\
+#TDS
+    emp, deptId
+    Alice, 1
+    Bob,   2
+    Carol, 9
+#->join(
+    #TDS
+        deptId, deptName
+        1, Engineering
+        2, Sales
+    #,
+    JoinType.LEFT,
+    {a,b | $a.deptId == $b.deptId}
+)""",
+        "**Signature:** ->join(rightTDS, JoinType.LEFT, condition: Lambda<Boolean>)\n\n"
+        "**JoinType.LEFT semantics:** Every row from the left TDS appears in the result exactly once. "
+        "If the condition matches one or more right rows, those right columns are filled in. "
+        "If no right row matches (Carol, deptId=9), the right-side columns are null.\n\n"
+        "**Result row count:** Always `>= |left|`. If a left row matches *multiple* right rows, "
+        "it appears once per match (fan-out). If it matches zero, it appears once with nulls.\n\n"
+        "**JoinType options recap:**\n"
+        "• `JoinType.INNER` — only matched rows (both sides must match)\n"
+        "• `JoinType.LEFT`  — all left rows; right nulls on no match\n"
+        "• `JoinType.RIGHT` — all right rows; left nulls on no match\n"
+        "• `JoinType.FULL`  — all rows from both sides; nulls where no match\n\n"
+        "**SQL equivalent:** `SELECT * FROM left LEFT JOIN right ON left.deptId = right.deptId`",
+        False,
+    ),
+
+    # ── Slicing ────────────────────────────────────────────────────────────────
+
+    "29 · drop — skip the first N rows": (
+        "Slicing",
+        "Remove the first N rows from a sorted TDS — the complement of take().",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+->sort(~price->descending())
+->drop(5)""",
+        "**Signature:** ->drop(n: Integer)\n\n"
+        "**Arg 1 — n:** Number of rows to skip from the *top* of the relation. Must be ≥ 0.\n\n"
+        "**Result:** A TDS containing all rows *after* the first n. Row count = `max(0, |input| - n)`.\n\n"
+        "**SQL equivalent:** `OFFSET 5` (with an ORDER BY to make it deterministic).\n\n"
+        "**Relationship to take() / slice():**\n"
+        "• `->take(5)` — keep rows 1–5 (TOP 5 / LIMIT 5)\n"
+        "• `->drop(5)` — skip rows 1–5, keep the rest\n"
+        "• `->slice(2, 7)` — keep rows at 0-based indices 2, 3, 4, 5, 6 (five rows)\n\n"
+        "**Determinism:** `drop()` is only meaningful after an explicit `->sort()`. Without a sort "
+        "the engine may return any N rows and the result is undefined.",
+        True,
+    ),
+
+    "30 · slice — rows in a half-open range [start, stop)": (
+        "Slicing",
+        "Extract a window of rows by 0-based index range — useful for pagination.",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+->sort(~price->descending())
+->slice(2, 7)""",
+        "**Signature:** ->slice(start: Integer, stop: Integer)\n\n"
+        "**Arg 1 — start:** 0-based index of the first row to include (inclusive).\n\n"
+        "**Arg 2 — stop:** 0-based index of the first row to *exclude* (exclusive). "
+        "The result contains rows at indices `start, start+1, …, stop-1`.\n\n"
+        "**Row count returned:** `stop - start` (provided the relation is large enough).\n\n"
+        "**Example:** `->slice(2, 7)` on 15 products → rows at indices 2, 3, 4, 5, 6 → 5 rows.\n\n"
+        "**SQL equivalent:** `LIMIT 5 OFFSET 2`\n\n"
+        "**Pagination pattern:**\n"
+        "  Page 1 → `->slice(0, 10)`\n"
+        "  Page 2 → `->slice(10, 20)`\n"
+        "  Page 3 → `->slice(20, 30)`\n\n"
+        "**vs take() / drop():** `->take(n)` ≡ `->slice(0, n)`. "
+        "`->drop(k)->take(n)` ≡ `->slice(k, k+n)` — slice is the more general form.",
+        True,
+    ),
+
+    "31 · first — single top row after sort": (
+        "Slicing",
+        "Return exactly one row — the first row of the relation after sorting.",
+        """\
+northwind::model::Product.all()
+->project([p|$p.productName, p|$p.unitPrice], ['product','price'])
+->sort(~price->descending())
+->first()""",
+        "**Signature:** ->first()\n\n"
+        "**Args:** None. `first()` takes no parameters — it simply returns the first row.\n\n"
+        "**Result:** A Relation with exactly 1 row. If the input is empty, the result is empty "
+        "(0 rows, not an error).\n\n"
+        "**SQL equivalent:** `LIMIT 1`\n\n"
+        "**Determinism:** Like `take()` and `drop()`, `first()` is only meaningful after an explicit "
+        "`->sort()`. Without a sort the engine picks an arbitrary row.\n\n"
+        "**vs take(1):** Functionally identical — `->first()` is idiomatic when the intent is "
+        "'give me the single best/latest/cheapest row', while `->take(1)` is used when you plan "
+        "to generalise to `take(n)` later.\n\n"
+        "**Typical use:** Find the most expensive product, the latest order, the largest holding.",
+        True,
+    ),
+
+    # ── Window functions (additional) ──────────────────────────────────────────
+
+    "32 · window rowNumber — sequential position in partition": (
+        "Window Functions",
+        "Assign a 1-based sequential row number within each partition, ordered by the window spec.",
+        """\
+#TDS
+    product,           category,   unitPrice
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->descending()), ~rowNum:{p,w,r|$p->rowNumber($w,$r)})""",
+        "**Signature:** ->extend(over(partition, orderSpec), ~alias:{p,w,r|$p->rowNumber($w,$r)})\n\n"
+        "**rowNumber()** is a window function called inside the `extend()` lambda:\n\n"
+        "**Lambda parameters — p, w, r:**\n"
+        "• `p` — the Relation (partition view) passed to the window function\n"
+        "• `w` — the `_Window` spec produced by `over()` (partition + order)\n"
+        "• `r` — the current row being evaluated\n\n"
+        "**over() args:**\n"
+        "• Arg 1 — partition col(s): `~category` groups rows into per-category windows. "
+        "Use `[]` for no partitioning (global row number).\n"
+        "• Arg 2 — order col(s): `~unitPrice->descending()` defines the sort within each partition.\n\n"
+        "**Result:** Integer 1, 2, 3, … within each partition. No gaps, no ties — every row gets "
+        "a unique number even when values are identical (contrast with `rank()` which produces gaps "
+        "on ties, and `denseRank()` which produces no gaps).\n\n"
+        "**SQL equivalent:** `ROW_NUMBER() OVER (PARTITION BY category ORDER BY unitPrice DESC)`",
+        False,
+    ),
+
+    "33 · window ntile — divide rows into N equal buckets": (
+        "Window Functions",
+        "Assign each row to one of N equal-sized buckets (tiles) ordered by the window spec.",
+        """\
+#TDS
+    product,           unitPrice
+    Konbu,             6.0
+    Aniseed Syrup,     10.0
+    Genen Shouyu,      15.5
+    Chai,              18.0
+    Chang,             19.0
+    Tofu,              23.25
+    Chef Anton Cajun,  22.0
+    Ikura,             31.0
+#->extend(over([], ~unitPrice->ascending()), ~quartile:{p,w,r|$p->ntile($w,$r,4)})""",
+        "**Signature:** ->extend(over(partition, orderSpec), ~alias:{p,w,r|$p->ntile($w,$r,N)})\n\n"
+        "**Arg inside ntile — N:** Integer tile count. 4 = quartiles, 10 = deciles, 100 = percentiles.\n\n"
+        "**Lambda parameters — p, w, r:** Same convention as all window functions:\n"
+        "• `p` — the Relation (window view)\n"
+        "• `w` — the `_Window` spec from `over()`\n"
+        "• `r` — the current row\n\n"
+        "**How tiles are assigned:** Rows are sorted by the order spec within each partition, "
+        "then divided as evenly as possible into N buckets (numbered 1..N). "
+        "If the row count is not divisible by N, earlier buckets get one extra row.\n\n"
+        "**over() arg 1 — partition:** `[]` means no partitioning — all 8 rows form one global window. "
+        "Use `~col` or `~[col1, col2]` to partition first.\n\n"
+        "**Result column:** Integer in range [1, N]. Tile 1 = lowest values, tile N = highest.\n\n"
+        "**SQL equivalent:** `NTILE(4) OVER (ORDER BY unitPrice ASC)`\n\n"
+        "**Typical use:** Assign quartile/decile labels for distribution analysis or binning.",
+        False,
+    ),
+
+    "34 · window percentRank — relative rank as a fraction": (
+        "Window Functions",
+        "Compute each row's relative rank within its partition as a float in [0.0, 1.0].",
+        """\
+#TDS
+    product,           category,   unitPrice
+    Konbu,             Seafood,    6.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->ascending()), ~pctRank:{p,w,r|$p->percentRank($w,$r)})""",
+        "**Signature:** ->extend(over(partition, orderSpec), ~alias:{p,w,r|$p->percentRank($w,$r)})\n\n"
+        "**percentRank()** computes: `(rank - 1) / (N - 1)` where `rank` is the 1-based rank "
+        "of the row and `N` is the number of rows in the partition.\n\n"
+        "**Result range:** Always in [0.0, 1.0].\n"
+        "• The first row (lowest value in ascending order) always gets 0.0.\n"
+        "• The last row (highest value) always gets 1.0.\n"
+        "• Tied rows share the same percentRank.\n\n"
+        "**Lambda parameters — p, w, r:** Standard window lambda convention "
+        "(p = partition view, w = window spec, r = current row).\n\n"
+        "**Example (Seafood partition, ascending price):**\n"
+        "• Konbu (6.0)  → rank 1 of 2 → (1-1)/(2-1) = 0.0\n"
+        "• Ikura (31.0) → rank 2 of 2 → (2-1)/(2-1) = 1.0\n\n"
+        "**SQL equivalent:** `PERCENT_RANK() OVER (PARTITION BY category ORDER BY unitPrice ASC)`\n\n"
+        "**vs cumulativeDistribution:** percentRank uses `(rank-1)/(N-1)`; "
+        "cumulativeDistribution uses `rank/N` — so cumDist is always ≥ percentRank.",
+        False,
+    ),
+
+    "35 · window cumulativeDistribution — fraction of rows ≤ current": (
+        "Window Functions",
+        "For each row, compute the fraction of rows in the partition with value ≤ the current row's value.",
+        """\
+#TDS
+    product,           category,   unitPrice
+    Konbu,             Seafood,    6.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->ascending()), ~cumDist:{p,w,r|$p->cumulativeDistribution($w,$r)})""",
+        "**Signature:** ->extend(over(partition, orderSpec), ~alias:{p,w,r|$p->cumulativeDistribution($w,$r)})\n\n"
+        "**cumulativeDistribution()** computes: `rank / N` where `rank` is the number of rows "
+        "in the partition with value ≤ the current row's value, and `N` is the total partition size.\n\n"
+        "**Result range:** Always in (0.0, 1.0] — the first row can be > 0 if there are ties "
+        "at the bottom; the last row is always exactly 1.0.\n\n"
+        "**Lambda parameters — p, w, r:** Standard window lambda convention "
+        "(p = partition view, w = window spec, r = current row).\n\n"
+        "**Example (Seafood partition, ascending price):**\n"
+        "• Konbu (6.0)  → 1 row ≤ 6.0 out of 2 total → 1/2 = 0.5\n"
+        "• Ikura (31.0) → 2 rows ≤ 31.0 out of 2 total → 2/2 = 1.0\n\n"
+        "**SQL equivalent:** `CUME_DIST() OVER (PARTITION BY category ORDER BY unitPrice ASC)`\n\n"
+        "**vs percentRank:** `percentRank` starts at 0.0 and uses `(rank-1)/(N-1)`; "
+        "`cumulativeDistribution` starts at `1/N` and uses `rank/N`. "
+        "For N=1 (single row in partition), cumDist=1.0, percentRank=0.0.",
+        False,
+    ),
 }
 

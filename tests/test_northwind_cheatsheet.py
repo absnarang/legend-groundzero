@@ -231,3 +231,221 @@ def test_groupby_count():
     assert result.get("success"), result.get("error")
     # 15 orders across multiple countries → distinct country count < 15
     assert 0 < result.get("rowCount", 0) < 15
+
+
+# ── New function coverage tests ───────────────────────────────────────────────
+
+def test_rename_column():
+    """rename() must change the column name without altering row values."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "->rename(~price, ~unitPrice)"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    cols = result.get("columns", [])
+    assert "unitPrice" in cols, f"Expected 'unitPrice' column, got {cols}"
+    assert "price" not in cols, f"Old column 'price' should be gone, got {cols}"
+    assert result.get("rowCount") == 15
+
+
+def test_select_narrow_columns():
+    """select() must drop unwanted columns, keeping only the requested ones."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice, p|$p.unitsInStock], ['product','price','stock'])"
+        "->select(~[product, price])"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    cols = result.get("columns", [])
+    assert set(cols) == {"product", "price"}, f"Expected only product+price, got {cols}"
+    assert result.get("rowCount") == 15
+
+
+def test_concatenate_union():
+    """concatenate() must return the sum of both sub-results (UNION ALL)."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "->filter({r | $r.price > 30.0})"
+        "->concatenate("
+        "    northwind::model::Product.all()"
+        "    ->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "    ->filter({r | $r.price < 10.0})"
+        ")"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount", 0) > 0, "concatenate returned 0 rows"
+    assert "product" in result.get("columns", [])
+
+
+def test_join_inner_predicate():
+    """Explicit INNER join on deptId — Dave (deptId=3) must be dropped."""
+    query = """\
+#TDS
+    emp, deptId
+    Alice, 1
+    Bob,   2
+    Carol, 1
+    Dave,  3
+#->join(
+    #TDS
+        deptId, deptName, budget
+        1, Engineering, 500000
+        2, Sales,       200000
+    #,
+    JoinType.INNER,
+    {a,b | $a.deptId == $b.deptId}
+)"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 3, f"INNER join: expected 3 rows, got {result.get('rowCount')}"
+
+
+def test_join_left_outer():
+    """LEFT join must keep all left rows; Carol (deptId=9) gets null right columns."""
+    query = """\
+#TDS
+    emp, deptId
+    Alice, 1
+    Bob,   2
+    Carol, 9
+#->join(
+    #TDS
+        deptId, deptName
+        1, Engineering
+        2, Sales
+    #,
+    JoinType.LEFT,
+    {a,b | $a.deptId == $b.deptId}
+)"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 3, f"LEFT join: expected 3 rows, got {result.get('rowCount')}"
+
+
+def test_drop_rows():
+    """drop(5) on 15 products must return 10 rows."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "->sort(~price->descending())"
+        "->drop(5)"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 10, f"drop(5): expected 10, got {result.get('rowCount')}"
+
+
+def test_slice_range():
+    """slice(2, 7) on 15 products must return exactly 5 rows."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "->sort(~price->descending())"
+        "->slice(2, 7)"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 5, f"slice(2,7): expected 5, got {result.get('rowCount')}"
+
+
+def test_first_row():
+    """first() on sorted products must return exactly 1 row."""
+    query = (
+        "northwind::model::Product.all()"
+        "->project([p|$p.productName, p|$p.unitPrice], ['product','price'])"
+        "->sort(~price->descending())"
+        "->first()"
+    )
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 1, f"first(): expected 1 row, got {result.get('rowCount')}"
+
+
+def test_window_row_number():
+    """rowNumber() must produce a rowNum column with integers ≥ 1."""
+    query = """\
+#TDS
+    product,           category,   unitPrice
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->descending()), ~rowNum:{p,w,r|$p->rowNumber($w,$r)})"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 5
+    assert "rowNum" in result.get("columns", [])
+
+
+def test_window_ntile():
+    """ntile(4) must produce a quartile column on 8 rows."""
+    query = """\
+#TDS
+    product,           unitPrice
+    Konbu,             6.0
+    Aniseed Syrup,     10.0
+    Genen Shouyu,      15.5
+    Chai,              18.0
+    Chang,             19.0
+    Tofu,              23.25
+    Chef Anton Cajun,  22.0
+    Ikura,             31.0
+#->extend(over([], ~unitPrice->ascending()), ~quartile:{p,w,r|$p->ntile($w,$r,4)})"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 8
+    assert "quartile" in result.get("columns", [])
+
+
+def test_window_percent_rank():
+    """percentRank() must produce a pctRank column in [0.0, 1.0]."""
+    query = """\
+#TDS
+    product,           category,   unitPrice
+    Konbu,             Seafood,    6.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->ascending()), ~pctRank:{p,w,r|$p->percentRank($w,$r)})"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 6
+    assert "pctRank" in result.get("columns", [])
+
+
+def test_window_cumulative_distribution():
+    """cumulativeDistribution() must produce a cumDist column."""
+    query = """\
+#TDS
+    product,           category,   unitPrice
+    Konbu,             Seafood,    6.0
+    Aniseed Syrup,     Condiments, 10.0
+    Chai,              Beverages,  18.0
+    Chang,             Beverages,  19.0
+    Chef Anton Cajun,  Condiments, 22.0
+    Ikura,             Seafood,    31.0
+#->extend(over(~category, ~unitPrice->ascending()), ~cumDist:{p,w,r|$p->cumulativeDistribution($w,$r)})"""
+    full_code = NORTHWIND_MODEL.strip() + "\n\n" + query
+    result = _post("/engine/execute", {"code": full_code})
+    assert result.get("success"), result.get("error")
+    assert result.get("rowCount") == 6
+    assert "cumDist" in result.get("columns", [])
