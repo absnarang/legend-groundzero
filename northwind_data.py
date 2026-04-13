@@ -450,8 +450,16 @@ northwind::model::Product.all()
     [p|$p.productName, p|$p.unitPrice, p|$p.unitsInStock],
     ['product', 'unitPrice', 'stock']
 )""",
-        "project() maps each lambda to a column alias. The result is a TDS (Tabular Data Set). "
-        "Use camelCase aliases — they become the column names for downstream filter/sort.",
+        "**Signature:** ->project(columnLambdas: List<Lambda>, aliases: List<String>)\n\n"
+        "**Arg 1 — columnLambdas:** A list of lambdas, one per output column. Each lambda "
+        "receives the root class instance (here `p`) and returns the property to project: "
+        "`[p|$p.productName, p|$p.unitPrice]`. You can also navigate associations inline: "
+        "`p|$p.category.categoryName`.\n\n"
+        "**Arg 2 — aliases:** A parallel list of String column names for the resulting TDS. "
+        "Order must match columnLambdas exactly. These aliases become the column names used "
+        "in every downstream operation (filter, sort, groupBy).\n\n"
+        "**Result:** A TDS (Tabular Data Set) — the fundamental Legend relation type. "
+        "All subsequent operations (->filter, ->sort, ->groupBy, ->extend) operate on TDS.",
         True,
     ),
 
@@ -465,8 +473,16 @@ northwind::model::Product.all()
     [p|$p.productName, p|$p.unitPrice, p|$p.unitsInStock],
     ['product', 'unitPrice', 'stock']
 )""",
-        "filter() before project() works on the class properties directly. "
-        "After project() you use $row.alias syntax (see example 04).",
+        "**Signature:** ->filter(predicate: Lambda<Boolean>)\n\n"
+        "**Arg 1 — predicate:** A single lambda that returns a Boolean. The variable "
+        "(`p` before project, `row` or `r` after project) is bound to each row in turn.\n\n"
+        "**Before project:** the lambda parameter is the class instance — use class "
+        "properties directly: `p | $p.discontinued == 0`. Association paths also work: "
+        "`o | $o.customer.country == 'Germany'`.\n\n"
+        "**After project:** the lambda parameter is a TDS row — reference columns by alias: "
+        "`{row | $row.unitPrice > 20.0 && $row.stock > 10}`. Use `&&` (AND) and `||` (OR).\n\n"
+        "**Operator reference:** `==` `!=` `>` `<` `>=` `<=` for primitives; "
+        "`->startsWith()` `->contains()` for strings.",
         True,
     ),
 
@@ -480,8 +496,16 @@ northwind::model::Product.all()
     ['product', 'unitPrice']
 )
 ->sort(~unitPrice->descending())""",
-        "sort('col') sorts ascending. For descending, use sort(~col->descending()). "
-        "Chain multiple sorts: ->sort(~a->descending())->sort('b').",
+        "**Signature (ascending):** ->sort('columnAlias')\n"
+        "**Signature (descending):** ->sort(~columnAlias->descending())\n\n"
+        "**Arg — column reference:**\n"
+        "• Ascending: pass a String alias: `sort('product')` → SQL ORDER BY ASC.\n"
+        "• Descending: use a column selector with `~`: `sort(~unitPrice->descending())` "
+        "→ SQL ORDER BY DESC.\n\n"
+        "**Chaining:** multiple sort() calls compose left-to-right (last call is the "
+        "primary sort key): `->sort(~a->descending())->sort('b')` → ORDER BY b ASC, a DESC.\n\n"
+        "**Important:** sort() operates on TDS column aliases, not on class property names. "
+        "Always project first, then sort on the alias.",
         True,
     ),
 
@@ -496,8 +520,14 @@ northwind::model::Product.all()
 )
 ->sort(~unitPrice->descending())
 ->take(5)""",
-        "take(N) is the Pure equivalent of SQL LIMIT. Always pair with sort() "
-        "to get a deterministic top-N.",
+        "**Signature:** ->take(n: Integer)\n\n"
+        "**Arg 1 — n:** The maximum number of rows to return. Maps directly to SQL LIMIT.\n\n"
+        "**Legend convention:** Always pair take() with sort() to produce a deterministic "
+        "result. Without a sort, the engine may return any N rows depending on storage order.\n\n"
+        "**Typical pattern for top-N:** `->sort(~col->descending())->take(N)` — "
+        "this is the Legend equivalent of SQL `ORDER BY col DESC LIMIT N`.\n\n"
+        "**Distinct from slice():** take(N) is equivalent to slice(0, N). Use take() "
+        "when you only need the first N rows from the beginning.",
         True,
     ),
 
@@ -511,8 +541,17 @@ northwind::model::Product.all()
     ['product', 'unitPrice', 'stock']
 )
 ->filter({row | $row.unitPrice > 20.0 && $row.stock > 10})""",
-        "Once you've projected, use $row.alias to reference columns. "
-        "The && operator maps to SQL AND. Use || for OR.",
+        "**Signature:** ->filter(predicate: Lambda<Boolean>)\n\n"
+        "**Post-project lambda form:** After ->project(), the filter lambda receives a "
+        "TDS row rather than a class instance. Columns are accessed via dot notation on "
+        "the row variable: `$row.unitPrice`, `$row.stock`.\n\n"
+        "**Boolean operators:**\n"
+        "• `&&` → SQL AND\n"
+        "• `||` → SQL OR\n"
+        "• `!expr` → SQL NOT\n\n"
+        "**Key rule:** Once you have crossed the project() boundary, you can only "
+        "reference columns by their TDS alias — not by the original class property name. "
+        "Use curly braces `{row | ...}` for the lambda when writing post-project filters.",
         True,
     ),
 
@@ -527,8 +566,15 @@ northwind::model::Order.all()
 )
 ->distinct()
 ->sort('country')""",
-        "distinct() maps to SQL DISTINCT. Apply it after project() on the TDS. "
-        "Useful for finding unique values of a column.",
+        "**Signature:** ->distinct()\n\n"
+        "**Args:** None — distinct() takes no arguments. It deduplicates all columns "
+        "of the current TDS together (equivalent to SQL SELECT DISTINCT on all projected columns).\n\n"
+        "**Placement:** Apply distinct() after project() and before sort()/take(). "
+        "Calling it before project() on a class will deduplicate on all mapped columns, "
+        "which is rarely what you want.\n\n"
+        "**Legend idiom for unique values:** `->project([x|$x.prop], ['alias'])->distinct()` "
+        "is the standard pattern for 'find all distinct values of a property' — "
+        "equivalent to SQL `SELECT DISTINCT col FROM table`.",
         True,
     ),
 
@@ -549,9 +595,16 @@ northwind::model::Order.all()
     ['country', 'orderCount']
 )
 ->sort(~orderCount->descending())""",
-        "groupBy() takes three lists: (1) group-key lambdas, "
-        "(2) aggregation lambdas, (3) output column aliases. "
-        "Aggregators: ->count(), ->sum(), ->avg(), ->min(), ->max().",
+        "**Signature:** ->groupBy(groupKeys: List<Lambda>, aggregations: List<Lambda>, aliases: List<String>)\n\n"
+        "**Arg 1 — groupKeys:** List of lambdas selecting the GROUP BY columns from the TDS row. "
+        "Each lambda: `{r|$r.columnAlias}`. Multiple keys: `[{r|$r.country},{r|$r.category}]`.\n\n"
+        "**Arg 2 — aggregations:** List of lambdas applying an aggregation function. "
+        "Each lambda: `{r|$r.columnAlias->aggFn()}`. "
+        "Available aggregators: `->count()` `->sum()` `->avg()` `->min()` `->max()`.\n\n"
+        "**Arg 3 — aliases:** Output column names for the result TDS, one per group key "
+        "followed by one per aggregation — in the same order.\n\n"
+        "**Note:** groupBy() must be called on a TDS (after ->project()), not directly "
+        "on a class. The TDS column aliases from project() are what the groupBy lambdas reference.",
         True,
     ),
 
@@ -570,8 +623,13 @@ northwind::model::Order.all()
     ['country', 'totalFreight']
 )
 ->sort(~totalFreight->descending())""",
-        "->sum() aggregates Float or Integer columns. The output alias "
-        "is the third list element matching the aggregation position.",
+        "**Signature:** ->groupBy(groupKeys: List<Lambda>, aggregations: List<Lambda>, aliases: List<String>)\n\n"
+        "**->sum() aggregator:** Applies to Float or Integer TDS columns. "
+        "The lambda form is `{r|$r.colAlias->sum()}` where `colAlias` must resolve to a "
+        "numeric column in the projected TDS.\n\n"
+        "**Alias alignment:** The third list must have exactly (number of group keys) + "
+        "(number of aggregations) entries. Here: 1 key ('country') + 1 agg ('totalFreight') = 2 aliases.\n\n"
+        "**SQL equivalent:** `SELECT ship_country, SUM(freight) FROM orders GROUP BY ship_country ORDER BY 2 DESC`.",
         True,
     ),
 
@@ -590,9 +648,14 @@ northwind::model::Product.all()
     ['category', 'avgPrice', 'numProducts']
 )
 ->sort('category')""",
-        "Multiple aggregations: add one lambda per agg to the second list, "
-        "and one alias per result to the third list. "
-        "Here we navigate Product → Category to get categoryName.",
+        "**Signature:** ->groupBy(groupKeys: List<Lambda>, aggregations: List<Lambda>, aliases: List<String>)\n\n"
+        "**Multiple aggregations:** Add one lambda to the aggregations list per aggregation. "
+        "Here: `[{r|$r.unitPrice->avg()}, {r|$r.productId->count()}]` produces two output columns.\n\n"
+        "**Alias list length rule:** aliases list length = len(groupKeys) + len(aggregations). "
+        "Here: 1 + 2 = 3 aliases: `['category', 'avgPrice', 'numProducts']`.\n\n"
+        "**Association navigation in project:** `p|$p.category.categoryName` crosses the "
+        "Product→Category association before groupBy, making categoryName available as the "
+        "'category' alias for grouping. Always project association paths before groupBy.",
         True,
     ),
 
@@ -612,9 +675,15 @@ northwind::model::Order.all()
 )
 ->filter({row | $row.orderCount >= 2})
 ->sort(~orderCount->descending())""",
-        "There is no dedicated HAVING clause in Pure — apply "
-        "->filter({row | ...}) after ->groupBy() instead. "
-        "The engine translates it into a SQL HAVING or subquery WHERE.",
+        "**Signature:** ->groupBy(...) followed by ->filter(predicate: Lambda<Boolean>)\n\n"
+        "**HAVING pattern:** Pure has no dedicated HAVING keyword. Instead, chain a "
+        "->filter() after ->groupBy(). The filter lambda receives a TDS row and can "
+        "reference any output alias from the groupBy — including aggregated columns.\n\n"
+        "**Lambda form:** `{row | $row.orderCount >= 2}` — use curly-brace lambda syntax "
+        "when filtering on aggregated TDS columns post-groupBy.\n\n"
+        "**Engine translation:** The engine detects that the filter references an aggregated "
+        "column and emits SQL HAVING or a subquery WHERE as appropriate. "
+        "This is semantically equivalent to `HAVING COUNT(order_id) >= 2`.",
         True,
     ),
 
@@ -630,9 +699,16 @@ northwind::model::Product.all()
     ['product', 'unitPrice', 'category']
 )
 ->sort('category')""",
-        "Navigation like $p.category.categoryName crosses the Product_Category "
-        "association. The engine emits a LEFT OUTER JOIN on the foreign key. "
-        "No explicit join syntax required.",
+        "**Signature:** No explicit join syntax — navigate via dot notation inside a project lambda.\n\n"
+        "**How it works:** `p|$p.category.categoryName` traverses the Association declared "
+        "in the model (`Product_Category`). The engine resolves the foreign key from the "
+        "Mapping definition and emits a LEFT OUTER JOIN automatically.\n\n"
+        "**Association declaration in the model:**\n"
+        "```\nAssociation northwind::model::Product_Category {\n"
+        "  category: northwind::model::Category[1];\n"
+        "  products: northwind::model::Product[*];\n}\n```\n"
+        "**Key rule:** Association navigation is always written as `$var.associationName.property` "
+        "inside a project or filter lambda. No JOIN keyword, no ON clause — Legend handles it.",
         True,
     ),
 
@@ -648,9 +724,16 @@ northwind::model::OrderDetail.all()
 )
 ->sort(~qty->descending())
 ->take(10)""",
-        "$d.product.productName navigates the OrderDetail→Product association. "
-        "The engine emits a LEFT OUTER JOIN on PRODUCT_ID. "
-        "Combined with sort + take, this gives the top 10 largest order lines.",
+        "**Signature:** Navigate via `$d.product.productName` inside the project lambda.\n\n"
+        "**Association used:** `OrderDetail_Product` — maps the PRODUCT_ID foreign key "
+        "in T_ORDER_DETAILS to T_PRODUCTS. The engine emits a LEFT OUTER JOIN.\n\n"
+        "**Mix local and associated columns freely:** In the same project lambda list you "
+        "can reference OrderDetail's own mapped columns (`$d.quantity`, `$d.unitPrice`) "
+        "alongside the joined Product column (`$d.product.productName`).\n\n"
+        "**Multiplicity note:** OrderDetail→Product is many-to-one (`[1]`), so each "
+        "detail line maps to exactly one product — the join never fans out the row count.\n\n"
+        "**sort + take pattern:** `->sort(~qty->descending())->take(10)` gives the top-10 "
+        "order lines by quantity — the Legend equivalent of `ORDER BY qty DESC LIMIT 10`.",
         True,
     ),
 
@@ -665,9 +748,17 @@ northwind::model::Order.all()
      o|$o.customer.companyName, o|$o.shipCity],
     ['orderId', 'orderDate', 'customer', 'shipCity']
 )""",
-        "Filtering on $o.customer.country before project generates a "
-        "SQL EXISTS or JOIN + WHERE — the engine picks the most efficient form. "
-        "The result only shows rows where the related country matches.",
+        "**Signature:** ->filter(predicate: Lambda<Boolean>) using association navigation.\n\n"
+        "**Pre-project association filter:** `o | $o.customer.country == 'Germany'` "
+        "navigates Order→Customer inside the filter predicate. The engine emits a JOIN "
+        "or EXISTS subquery to evaluate the condition.\n\n"
+        "**Then navigate again in project:** `o|$o.customer.companyName` in the project "
+        "lambda reuses the same association — the engine is smart enough to emit one JOIN, "
+        "not two.\n\n"
+        "**Pattern — filter on FK property, project FK property:** This is the standard "
+        "Legend pattern for 'show me orders WHERE customer.country = X, and also show "
+        "me the customer name'. Both filter and project can reference the same association "
+        "in one clean pipeline.",
         True,
     ),
 
@@ -682,9 +773,16 @@ northwind::model::Order.all()
     ['orderId', 'orderDate', 'freight', 'empFirst', 'empLast']
 )
 ->sort(~freight->descending())""",
-        "Order→Employee is navigated via the EMP_ID foreign key. "
-        "Projecting Order's own columns (orderId, freight) together with "
-        "Employee columns (firstName, lastName) generates a single LEFT OUTER JOIN.",
+        "**Signature:** Navigate via `$o.employee.firstName` and `$o.employee.lastName` "
+        "inside the project lambda list.\n\n"
+        "**Association used:** `Order_Employee` — maps the EMP_ID foreign key in T_ORDERS "
+        "to T_EMPLOYEES. The engine emits a single LEFT OUTER JOIN.\n\n"
+        "**Multiple properties from the same association:** Both `$o.employee.firstName` "
+        "and `$o.employee.lastName` cross the same Order→Employee association. The engine "
+        "recognises that both paths share the same JOIN and does not duplicate it.\n\n"
+        "**Multiplicity:** Order→Employee is many-to-one (`[1]`), so projecting employee "
+        "fields never multiplies order rows. If multiplicity were `[*]`, each order row "
+        "would fan out to one row per matching employee.",
         True,
     ),
 
@@ -707,10 +805,19 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->ascending()),
     ~priceRank:{p,w,r|$p->rank($w,$r)}
 )""",
-        "extend() with over() appends a window-computed column to the TDS. "
-        "over(~partition, ~orderKey) defines the window. "
-        "The result column (priceRank) appears after all existing columns. "
-        "Window extends can be chained for multiple derived columns.",
+        "**Signature:** ->extend(windowSpec: over(...), columnSpec: ~alias:{p,w,r|expr})\n\n"
+        "**Arg 1 — over(partitionCol, orderCol):**\n"
+        "• `~partitionCol` — the column to PARTITION BY (tilde prefix = column selector).\n"
+        "• `~orderCol->ascending()` or `~orderCol->descending()` — the ORDER BY within the window.\n\n"
+        "**Arg 2 — ~alias:{p,w,r|expr}:**\n"
+        "• `~alias` — the name of the new column added to the TDS.\n"
+        "• `{p,w,r|...}` — three-parameter window lambda: `p` = the current partition frame, "
+        "`w` = the window spec, `r` = the current row. Pass them to the window function: "
+        "`$p->rank($w,$r)`.\n\n"
+        "**Window function options:** `rank($w,$r)`, `denseRank($w,$r)`, "
+        "`lag($r).colName`, `lead($r).colName`.\n\n"
+        "**TDS literal syntax:** `#TDS\\n col1, col2\\n val1, val2\\n#` — "
+        "provides inline data without a database. Requires a Runtime in the code block.",
         False,
     ),
 
@@ -731,10 +838,18 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->ascending()),
     ~runningTotal:{p,w,r|$r.unitPrice}:y|$y->plus()
 )""",
-        "Running SUM uses {p,w,r|$r.col}:y|$y->plus(). "
-        "The inner lambda selects the value per row; :y|$y->plus() accumulates it "
-        "within each partition ordered by unitPrice. "
-        "Compare this to window RANK — both use extend(over(…), …) syntax.",
+        "**Signature:** ->extend(windowSpec: over(...), ~alias:{p,w,r|valueExpr}:accumVar|accumExpr)\n\n"
+        "**Running aggregation form:** Append `:accumVar|$accumVar->aggFn()` after the "
+        "window lambda to produce a running (cumulative) value.\n\n"
+        "**Breakdown of `~runningTotal:{p,w,r|$r.unitPrice}:y|$y->plus()`:**\n"
+        "• `~runningTotal` — name of the new column.\n"
+        "• `{p,w,r|$r.unitPrice}` — per-row value selector: extract unitPrice from each row.\n"
+        "• `:y|$y->plus()` — accumulation step: `y` holds the collected values so far; "
+        "`->plus()` sums them (running SUM). Use `->times()` for running PRODUCT.\n\n"
+        "**over() args:** `~category` partitions; `~unitPrice->ascending()` sets the "
+        "cumulative order within each category partition.\n\n"
+        "**vs window RANK:** Both use extend(over(...), ...). RANK uses `$p->rank($w,$r)`. "
+        "Running SUM uses the accumulator `:y|$y->plus()` form — no `$p`/`$w` needed.",
         False,
     ),
 
@@ -759,9 +874,18 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->descending()),
     ~priceRank:{p,w,r|$p->rank($w,$r)}
 )""",
-        "over(~partition, ~orderKey) defines the window frame. "
-        "rank() assigns 1,2,3… with gaps on ties (SQL RANK). "
-        "The TDS literal (#TDS…#) provides inline test data — no DB seeding needed.",
+        "**Signature:** ->extend(over(~partition, ~orderCol->dir()), ~alias:{p,w,r|$p->rank($w,$r)})\n\n"
+        "**over() args:**\n"
+        "• Arg 1: `~partitionCol` — column selector for PARTITION BY.\n"
+        "• Arg 2: `~orderCol->descending()` or `->ascending()` — ORDER BY within the window.\n\n"
+        "**Window lambda `{p,w,r|...}`:**\n"
+        "• `p` — the partition frame (the set of rows in this partition).\n"
+        "• `w` — the window spec (the ordering within the partition).\n"
+        "• `r` — the current row.\n"
+        "• Call: `$p->rank($w,$r)` — pass all three to rank().\n\n"
+        "**RANK behaviour:** Assigns integers 1,2,3,… with gaps on ties. "
+        "If two rows tie at rank 2, the next row gets rank 4 (SQL RANK). "
+        "Use denseRank() for no-gap consecutive ranks.",
         False,
     ),
 
@@ -782,9 +906,16 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->descending()),
     ~denseRank:{p,w,r|$p->denseRank($w,$r)}
 )""",
-        "denseRank() maps to SQL DENSE_RANK. If two products share a rank, "
-        "the next product gets rank+1 (not rank+2). "
-        "Use when you want contiguous rank numbers despite ties.",
+        "**Signature:** ->extend(over(~partition, ~orderCol->dir()), ~alias:{p,w,r|$p->denseRank($w,$r)})\n\n"
+        "**denseRank() vs rank():**\n"
+        "• `rank($w,$r)` — SQL RANK: gaps on ties (1,2,2,4).\n"
+        "• `denseRank($w,$r)` — SQL DENSE_RANK: no gaps (1,2,2,3).\n\n"
+        "**Lambda parameter recap — same for all window functions:**\n"
+        "• `p` = partition frame → passed to the window function as first arg.\n"
+        "• `w` = window ordering spec → passed as second arg.\n"
+        "• `r` = current row → passed as third arg.\n\n"
+        "**When to use denseRank:** Whenever you need a contiguous ranking (e.g. "
+        "'top 3 by price in each category') and don't want gaps caused by tied values.",
         False,
     ),
 
@@ -805,9 +936,16 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->ascending()),
     ~prevPrice:{p,w,r|$p->lag($r).unitPrice}
 )""",
-        "lag($r).colName retrieves the previous row's value in the window "
-        "(SQL LAG). The first row in each partition returns null. "
-        "Useful for period-over-period comparisons.",
+        "**Signature:** ->extend(over(~partition, ~orderCol->dir()), ~alias:{p,w,r|$p->lag($r).colName})\n\n"
+        "**lag($r).colName:**\n"
+        "• `$p->lag($r)` — returns the *previous* row in the window ordering as a row object.\n"
+        "• `.unitPrice` — property access on the lagged row to extract the value.\n"
+        "• The first row in each partition has no previous row → returns null.\n\n"
+        "**over() ordering matters:** The ordering in over() determines what 'previous' means. "
+        "Here `~unitPrice->ascending()` means lag() looks at the row with the next-lower unitPrice.\n\n"
+        "**SQL equivalent:** `LAG(unit_price) OVER (PARTITION BY category ORDER BY unit_price ASC)`.\n\n"
+        "**Use cases:** Period-over-period change, finding the prior price, "
+        "computing deltas between consecutive rows within a group.",
         False,
     ),
 
@@ -828,9 +966,16 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->ascending()),
     ~nextPrice:{p,w,r|$p->lead($r).unitPrice}
 )""",
-        "lead($r).colName retrieves the next row's value (SQL LEAD). "
-        "The last row in each partition returns null. "
-        "Useful to show what comes next without a self-join.",
+        "**Signature:** ->extend(over(~partition, ~orderCol->dir()), ~alias:{p,w,r|$p->lead($r).colName})\n\n"
+        "**lead($r).colName:**\n"
+        "• `$p->lead($r)` — returns the *next* row in the window ordering as a row object.\n"
+        "• `.unitPrice` — property access on the lead row to extract the value.\n"
+        "• The last row in each partition has no next row → returns null.\n\n"
+        "**lag() vs lead():**\n"
+        "• `lag($r)` — look back one row (previous in ordering).\n"
+        "• `lead($r)` — look ahead one row (next in ordering).\n"
+        "Both use the same lambda signature `{p,w,r|$p->fn($r).col}` and the same over() spec.\n\n"
+        "**SQL equivalent:** `LEAD(unit_price) OVER (PARTITION BY category ORDER BY unit_price ASC)`.",
         False,
     ),
 
@@ -851,9 +996,17 @@ northwind::model::Order.all()
     over(~category, ~unitPrice->ascending()),
     ~runningTotal:{p,w,r|$r.unitPrice}:y|$y->plus()
 )""",
-        "Running SUM uses the form {p,w,r|$r.col}:y|$y->plus(). "
-        "The inner lambda selects the value; :y|$y->plus() accumulates it. "
-        "Use ->sum() for a total, ->plus() for a running accumulation.",
+        "**Signature:** ->extend(over(~partition, ~orderCol->dir()), ~alias:{p,w,r|$r.colName}:y|$y->aggFn())\n\n"
+        "**Running aggregation breakdown:**\n"
+        "• `{p,w,r|$r.unitPrice}` — value selector lambda: extract unitPrice from each row `r`.\n"
+        "• `:y|$y->plus()` — accumulator step: `y` is the running collection of values; "
+        "`->plus()` sums them cumulatively (SQL SUM OVER with ROWS UNBOUNDED PRECEDING).\n\n"
+        "**Accumulator functions:**\n"
+        "• `->plus()` → running SUM.\n"
+        "• `->times()` → running PRODUCT.\n\n"
+        "**Key distinction from RANK/LAG:** RANK and LAG use `{p,w,r|$p->fn($w,$r)}` — "
+        "the partition frame `p` drives the function. Running SUM uses `{p,w,r|$r.col}:y|$y->plus()` "
+        "— `r` (the current row) provides the value, and `:y|...` accumulates it.",
         False,
     ),
 
@@ -880,10 +1033,20 @@ northwind::model::Order.all()
     {t, q | $t.tradeTime > $q.quoteTime},
     {t, q | $t.symbol == $q.quoteSymbol}
 )""",
-        "asOfJoin(rightTDS, timeCondition, equalityCondition) joins each left row "
-        "to the most recent right row satisfying both conditions. "
-        "The time condition selects the correct quote; the equality condition "
-        "ensures symbol matching. Maps to DuckDB ASOF JOIN.",
+        "**Signature:** ->asOfJoin(rightTDS, timeCondition: Lambda<Boolean>, equalityCondition: Lambda<Boolean>)\n\n"
+        "**Arg 1 — rightTDS:** The right-hand TDS to join against. Can be a `#TDS...#` literal "
+        "or the result of any TDS-producing expression.\n\n"
+        "**Arg 2 — timeCondition `{t,q|$t.timeCol > $q.timeCol}`:**\n"
+        "• `t` = left row (trade), `q` = right row (quote).\n"
+        "• Must be a strict inequality on the time columns (`>`).\n"
+        "• Selects: for each trade, all quotes where quoteTime is before tradeTime.\n"
+        "• From those candidates, the engine picks the *most recent* (latest quoteTime).\n\n"
+        "**Arg 3 — equalityCondition `{t,q|$t.symbol == $q.quoteSymbol}`:**\n"
+        "• An optional additional equality predicate — filters candidates further before "
+        "selecting the most recent match.\n"
+        "• Use this for symbol matching, instrument ID, or any partition key.\n\n"
+        "**DateTime literal syntax:** `%2024-01-15T10:30:00` — the `%` prefix marks a "
+        "Pure DateTime literal. All datetime columns in TDS literals must use this form.",
         False,
     ),
 
@@ -906,9 +1069,19 @@ northwind::model::Order.all()
     #,
     {t, q | $t.tradeTime > $q.quoteTime}
 )""",
-        "When there is only one condition (time), every trade is matched to "
-        "the last quote whose quoteTime is strictly before the tradeTime. "
-        "tradeId=3 gets quoteC (11:15), not quoteD (12:00).",
+        "**Signature:** ->asOfJoin(rightTDS, timeCondition: Lambda<Boolean>)\n\n"
+        "**Two-arg form (no equality condition):** When there is only one condition, "
+        "every left row is matched to the *single most recent* right row whose time "
+        "is strictly less than the left row's time — no symbol/key partitioning.\n\n"
+        "**How the engine picks the match:**\n"
+        "1. Filter right rows where `$q.quoteTime < $t.tradeTime` (strict `>` in the lambda).\n"
+        "2. Among those candidates, pick the one with the maximum quoteTime.\n"
+        "3. If no right row qualifies, the left row is still included with null right-side columns.\n\n"
+        "**Worked example from the data above:**\n"
+        "• tradeId=1 (10:30) → quoteB (10:45) is *after* — not eligible. Matches quoteA (10:15).\n"
+        "• tradeId=2 (10:50) → quoteB (10:45) is before. Matches quoteB (highest before 10:50).\n"
+        "• tradeId=3 (11:30) → quoteC (11:15) is before; quoteD (12:00) is after. Matches quoteC.\n\n"
+        "**DateTime literal:** prefix with `%` — e.g. `%2024-01-15T10:30:00`.",
         False,
     ),
 }
