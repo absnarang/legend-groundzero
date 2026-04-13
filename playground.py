@@ -402,6 +402,7 @@ ETF_EXAMPLE_QUESTIONS = [
     "Which funds track the S&P 500 index and what is their expense ratio?",
 ]
 
+from northwind_data import NORTHWIND_MODEL, NORTHWIND_SEED_SQL, CHEAT_SHEET
 
 DEFAULT_MODEL = """\
 Class model::Department
@@ -1083,8 +1084,8 @@ with st.expander("⚠️ Disclaimer — all data is fictional and for illustrati
     )
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_main, tab_sql_raw, tab_seed, tab_nlq, tab_about = st.tabs(
-    ["⇄ Pure ↔ SQL", "🗄️ Raw SQL", "🌱 Seed Data", "🔍 NLQ", "📖 About"]
+tab_main, tab_sql_raw, tab_seed, tab_nlq, tab_cheat, tab_about = st.tabs(
+    ["⇄ Pure ↔ SQL", "🗄️ Raw SQL", "🌱 Seed Data", "🔍 NLQ", "📚 Cheat Sheet", "📖 About"]
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1397,7 +1398,111 @@ with tab_nlq:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — About
+# TAB 5 — Cheat Sheet: TDS operations on Northwind model
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_cheat:
+    st.subheader("📚 Pure TDS Cheat Sheet — Northwind Model")
+    st.caption(
+        "Every TDS relation function the Legend engine supports — one runnable example each. "
+        "Pick an operation, read the explanation, then hit ▶ Execute to see live results."
+    )
+
+    # ── group filter ──────────────────────────────────────────────────────────
+    all_groups = sorted({v[0] for v in CHEAT_SHEET.values()})
+    cheat_group = st.radio(
+        "Category:",
+        ["All"] + all_groups,
+        horizontal=True,
+        key="cheat_group",
+    )
+
+    visible = {
+        k: v for k, v in CHEAT_SHEET.items()
+        if cheat_group == "All" or v[0] == cheat_group
+    }
+
+    cheat_choice = st.selectbox(
+        "Operation:",
+        list(visible.keys()),
+        key="cheat_choice",
+    )
+
+    group, description, query, explanation, uses_db = visible[cheat_choice]
+
+    # ── info row ──────────────────────────────────────────────────────────────
+    info_col, badge_col = st.columns([5, 1])
+    with info_col:
+        st.markdown(f"**{description}**")
+    with badge_col:
+        if uses_db:
+            st.info("🗄️ DB")
+            st.caption("requires seed")
+        else:
+            st.success("⚡ Inline")
+            st.caption("no seed needed")
+
+    # ── code block ────────────────────────────────────────────────────────────
+    st.code(query, language="text")
+
+    # ── explanation ───────────────────────────────────────────────────────────
+    with st.expander("💡 How it works", expanded=False):
+        st.markdown(explanation)
+
+    st.divider()
+
+    # ── action row ────────────────────────────────────────────────────────────
+    seed_col, exec_col, _ = st.columns([2, 2, 4])
+
+    with seed_col:
+        if uses_db:
+            if st.button("🌱 Seed Northwind Data", key="cheat_seed_btn"):
+                with st.spinner("Seeding…"):
+                    r = post_json(f"{ENGINE_URL}/engine/sql", {
+                        "code": NORTHWIND_MODEL,
+                        "sql": NORTHWIND_SEED_SQL,
+                        "runtime": "northwind::runtime::NorthwindRuntime",
+                    })
+                if r.get("success"):
+                    st.success("✅ Northwind data seeded")
+                else:
+                    st.error(r.get("error", "Seed failed"))
+        else:
+            st.caption("No seeding required — data is inline.")
+
+    with exec_col:
+        cheat_exec = st.button("▶ Execute", type="primary", key="cheat_exec_btn")
+
+    # ── execute ───────────────────────────────────────────────────────────────
+    if "cheat_result" not in st.session_state:
+        st.session_state["cheat_result"] = None
+    if "cheat_last_op" not in st.session_state:
+        st.session_state["cheat_last_op"] = None
+
+    if cheat_exec:
+        model_src = NORTHWIND_MODEL  # always — TDS literals need the Runtime too
+        with st.spinner("Running query…"):
+            result = run_query(model_src, query)
+        st.session_state["cheat_result"] = result
+        st.session_state["cheat_last_op"] = cheat_choice
+
+    cheat_res = st.session_state.get("cheat_result")
+    if cheat_res and st.session_state.get("cheat_last_op") == cheat_choice:
+        if cheat_res.get("success"):
+            import pandas as pd
+            data = json.loads(cheat_res["data"])
+            cols = cheat_res["columns"]
+            n = cheat_res["rowCount"]
+            st.success(f"✅ {n} row(s) returned")
+            if data:
+                st.dataframe(pd.DataFrame(data, columns=cols), use_container_width=True)
+            else:
+                st.info("Query executed successfully — 0 rows returned.")
+        else:
+            st.error(f"❌ {cheat_res.get('error') or 'Unknown error'}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — About
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_about:
     st.subheader("How the sync works")
