@@ -89,6 +89,28 @@ playground.py (Streamlit)
 
 ---
 
+---
+
+## ⚠️ Disclaimer
+
+> **All data, names, and figures in this application are entirely fictional and used for educational and illustrative purposes only.**
+
+- **Company names, fund names, and ticker symbols** (e.g. SPY, QQQ, VTI, AAPL, MSFT, NVDA, AMZN, GOOGL) appear as recognisable placeholders to make example queries readable. They do not represent real funds or securities, and no data associated with them reflects any actual market value, performance, or characteristic.
+
+- **Financial metrics** — AUM, market capitalisation, NAV, expense ratio, portfolio weights, share counts, volumes, and prices — are randomly chosen dummy values with no relation to real market data, past or present.
+
+- **Enumerations, asset classes, and sector labels** (EQUITY, FIXED_INCOME, COMMODITY, TECHNOLOGY, HEALTHCARE, FINANCIALS, etc.) are generic illustrative examples produced by frontier AI models. They carry no endorsement of, or affiliation with, any real index provider, fund manager, asset manager, or financial institution.
+
+- **Benchmark index names** (e.g. "S&P 500", "NASDAQ-100") appear as illustrative string values in dummy data only. No affiliation with or endorsement by the index providers (S&P Global, Nasdaq, Inc.) is claimed or implied.
+
+- This application does **not** constitute financial advice, investment recommendations, or solicitation of any kind.
+
+- No trademark, copyright, patent, or other intellectual property of any third party is claimed or implied by this project.
+
+*This repository exists solely to demonstrate the Pure language engine, SQL compilation pipeline, and LLM-powered Natural Language Query capabilities described in [legend-intelligence](https://github.com/absnarang/legend-intelligence).*
+
+---
+
 ## Related
 
 - [legend-intelligence](https://github.com/absnarang/legend-intelligence) — the Pure language engine and NLQ pipeline (Java backend)
