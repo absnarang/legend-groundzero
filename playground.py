@@ -1427,7 +1427,8 @@ with tab_cheat:
         key="cheat_choice",
     )
 
-    group, description, query, explanation, uses_db = visible[cheat_choice]
+    entry = visible[cheat_choice]
+    group, description, query, explanation, uses_db = entry[:5]
 
     # ── info row ──────────────────────────────────────────────────────────────
     info_col, badge_col = st.columns([5, 1])
