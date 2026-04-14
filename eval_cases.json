@@ -1,0 +1,624 @@
+[
+  {
+    "id": "nw-001",
+    "question": "Show all products in the Beverages category",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Product", "Category"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->filter(p|$p.category.categoryName == 'Beverages')->project([p|$p.productName, p|$p.unitPrice, p|$p.category.categoryName], ['productName', 'unitPrice', 'category'])",
+      "mustContainOps": ["project", "filter"],
+      "properties": { "dimensions": ["categoryName"], "metrics": [], "filters": ["categoryName"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-002",
+    "question": "Show the top 5 products by price and rename the price column to unitPrice",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Product"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.productName, p|$p.unitPrice], ['product', 'price'])->sort(~price->descending())->take(5)->rename(~price, ~unitPrice)",
+      "mustContainOps": ["project", "sort", "take", "rename"],
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice"], "filters": [], "sortedBy": ["price"] }
+    }
+  },
+  {
+    "id": "nw-003",
+    "question": "How many orders were shipped to each country?",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.shipCountry, o|$o.orderId], ['country', 'orderId'])->groupBy([{r|$r.country}], [{r|$r.orderId->count()}], ['country', 'orderCount'])->sort(~orderCount->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["shipCountry"], "metrics": ["count"], "filters": [], "sortedBy": ["orderCount"] }
+    }
+  },
+  {
+    "id": "nw-004",
+    "question": "Show order details with product names, sorted by quantity descending",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["OrderDetail", "Product"],
+      "rootClass": "OrderDetail",
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.quantity, d|$d.unitPrice, d|$d.product.productName], ['quantity', 'unitPrice', 'product'])->sort(~quantity->descending())",
+      "mustContainOps": ["project", "sort"],
+      "properties": { "dimensions": ["productName"], "metrics": ["quantity"], "filters": [], "sortedBy": ["quantity"] }
+    }
+  },
+  {
+    "id": "nw-005",
+    "question": "What are the top 5 most expensive products?",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Product"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.productName, p|$p.unitPrice], ['productName', 'unitPrice'])->sort(~unitPrice->descending())->take(5)",
+      "mustContainOps": ["project", "sort", "take"],
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice"], "filters": [], "sortedBy": ["unitPrice"] }
+    }
+  },
+  {
+    "id": "nw-006",
+    "question": "Show all distinct countries that orders have been shipped to",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Order"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.shipCountry], ['country'])->distinct()->sort('country')",
+      "mustContainOps": ["project", "distinct"],
+      "properties": { "dimensions": ["shipCountry"], "metrics": [], "filters": [], "sortedBy": ["country"] }
+    }
+  },
+  {
+    "id": "nw-007",
+    "question": "What is the total freight cost by shipping country?",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.shipCountry, o|$o.freight], ['country', 'freight'])->groupBy([{r|$r.country}], [{r|$r.freight->sum()}], ['country', 'totalFreight'])->sort(~totalFreight->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["shipCountry"], "metrics": ["sum"], "filters": [], "sortedBy": ["totalFreight"] }
+    }
+  },
+  {
+    "id": "nw-008",
+    "question": "Which countries have more than 2 orders?",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Order"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.shipCountry, o|$o.orderId], ['country', 'orderId'])->groupBy([{r|$r.country}], [{r|$r.orderId->count()}], ['country', 'orderCount'])->filter({row | $row.orderCount > 2})->sort(~orderCount->descending())",
+      "mustContainOps": ["project", "groupBy", "filter"],
+      "properties": { "dimensions": ["shipCountry"], "metrics": ["count"], "filters": ["orderCount"], "sortedBy": ["orderCount"] }
+    }
+  },
+  {
+    "id": "nw-009",
+    "question": "Show products with price above 20 and stock greater than 10",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Product"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->filter(p|($p.unitPrice > 20) && ($p.unitsInStock > 10))->project([p|$p.productName, p|$p.unitPrice, p|$p.unitsInStock], ['productName', 'unitPrice', 'stock'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice", "unitsInStock"], "filters": ["unitPrice", "unitsInStock"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-010",
+    "question": "What is the average unit price per category?",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Product", "Category"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.category.categoryName, p|$p.unitPrice], ['category', 'unitPrice'])->groupBy([{r|$r.category}], [{r|$r.unitPrice->avg()}], ['category', 'avgPrice'])->sort('category')",
+      "mustContainOps": ["project", "groupBy"],
+      "properties": { "dimensions": ["categoryName"], "metrics": ["avg"], "filters": [], "sortedBy": ["category"] }
+    }
+  },
+  {
+    "id": "nw-011",
+    "question": "Show all orders with employee first and last name",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order", "Employee"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.orderId, o|$o.orderDate, o|$o.employee.firstName, o|$o.employee.lastName], ['orderId', 'orderDate', 'empFirst', 'empLast'])",
+      "mustContainOps": ["project"],
+      "properties": { "dimensions": ["orderId", "firstName", "lastName"], "metrics": [], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-012",
+    "question": "List all suppliers from the UK",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Supplier"],
+      "rootClass": "Supplier",
+      "referenceQuery": "northwind::model::Supplier.all()->filter(s|$s.country == 'UK')->project([s|$s.companyName, s|$s.city, s|$s.country], ['companyName', 'city', 'country'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["companyName", "city"], "metrics": [], "filters": ["country"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-013",
+    "question": "Show the 3 most expensive products with their categories",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Product", "Category"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.productName, p|$p.unitPrice, p|$p.category.categoryName], ['productName', 'unitPrice', 'category'])->sort(~unitPrice->descending())->take(3)",
+      "mustContainOps": ["project", "sort", "take"],
+      "properties": { "dimensions": ["productName", "categoryName"], "metrics": ["unitPrice"], "filters": [], "sortedBy": ["unitPrice"] }
+    }
+  },
+  {
+    "id": "nw-014",
+    "question": "How many orders does each customer have?",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order", "Customer"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.customer.companyName, o|$o.orderId], ['customer', 'orderId'])->groupBy([{r|$r.customer}], [{r|$r.orderId->count()}], ['customer', 'orderCount'])->sort(~orderCount->descending())",
+      "mustContainOps": ["project", "groupBy"],
+      "properties": { "dimensions": ["companyName"], "metrics": ["count"], "filters": [], "sortedBy": ["orderCount"] }
+    }
+  },
+  {
+    "id": "nw-015",
+    "question": "Show all orders placed after July 10, 1996",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->filter(o|$o.orderDate > '1996-07-10')->project([o|$o.orderId, o|$o.orderDate, o|$o.freight, o|$o.shipCountry], ['orderId', 'orderDate', 'freight', 'country'])->sort('orderDate')",
+      "mustContainOps": ["filter", "project", "sort"],
+      "properties": { "dimensions": ["orderId", "shipCountry"], "metrics": ["freight"], "filters": ["orderDate"], "sortedBy": ["orderDate"] }
+    }
+  },
+  {
+    "id": "nw-016",
+    "question": "Show order details with product name and category for each line item",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["OrderDetail", "Product", "Category"],
+      "rootClass": "OrderDetail",
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.quantity, d|$d.unitPrice, d|$d.product.productName, d|$d.product.category.categoryName], ['quantity', 'unitPrice', 'product', 'category'])",
+      "mustContainOps": ["project"],
+      "properties": { "dimensions": ["productName", "categoryName"], "metrics": ["quantity", "unitPrice"], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-017",
+    "question": "Show each order with the product names from its order details",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Order", "OrderDetail", "Product"],
+      "rootClass": "OrderDetail",
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.order.orderId, d|$d.order.orderDate, d|$d.product.productName, d|$d.quantity, d|$d.unitPrice], ['orderId', 'orderDate', 'product', 'quantity', 'unitPrice'])->sort('orderId')",
+      "mustContainOps": ["project", "sort"],
+      "properties": { "dimensions": ["orderId", "productName"], "metrics": ["quantity", "unitPrice"], "filters": [], "sortedBy": ["orderId"] }
+    }
+  },
+  {
+    "id": "nw-018",
+    "question": "What is the average freight per customer, only for customers with average freight above 50?",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Order", "Customer"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.customer.companyName, o|$o.freight], ['customer', 'freight'])->groupBy([{r|$r.customer}], [{r|$r.freight->avg()}], ['customer', 'avgFreight'])->filter({row | $row.avgFreight > 50})->sort(~avgFreight->descending())",
+      "mustContainOps": ["project", "groupBy", "filter", "sort"],
+      "properties": { "dimensions": ["companyName"], "metrics": ["avg"], "filters": ["avgFreight"], "sortedBy": ["avgFreight"] }
+    }
+  },
+  {
+    "id": "nw-019",
+    "question": "Show all orders from German customers",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Order", "Customer"],
+      "rootClass": "Order",
+      "referenceQuery": "northwind::model::Order.all()->filter(o|$o.customer.country == 'Germany')->project([o|$o.orderId, o|$o.orderDate, o|$o.customer.companyName, o|$o.shipCity], ['orderId', 'orderDate', 'customer', 'shipCity'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["orderId", "companyName"], "metrics": [], "filters": ["country"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-020",
+    "question": "Count products per category sorted by count descending",
+    "domain": "Northwind",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Product", "Category"],
+      "rootClass": "Product",
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.category.categoryName, p|$p.productId], ['category', 'productId'])->groupBy([{r|$r.category}], [{r|$r.productId->count()}], ['category', 'productCount'])->sort(~productCount->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["categoryName"], "metrics": ["count"], "filters": [], "sortedBy": ["productCount"] }
+    }
+  },
+  {
+    "id": "etf-001",
+    "question": "Show all EQUITY asset class funds sorted by AUM descending",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.assetClass == 'EQUITY')->project([f|$f.ticker, f|$f.fundName, f|$f.assetClass, f|$f.aum], ['ticker', 'fundName', 'assetClass', 'aum'])->sort(~aum->descending())",
+      "mustContainOps": ["filter", "project", "sort"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["aum"], "filters": ["assetClass"], "sortedBy": ["aum"] }
+    }
+  },
+  {
+    "id": "etf-002",
+    "question": "What are the top 5 holdings of SPY by weight?",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Fund"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->filter(h|$h.fund.ticker == 'SPY')->project([h|$h.weight, h|$h.marketValue, h|$h.fund.ticker], ['weight', 'marketValue', 'fundTicker'])->sort(~weight->descending())->take(5)",
+      "mustContainOps": ["filter", "project", "sort", "take"],
+      "properties": { "dimensions": ["fundTicker"], "metrics": ["weight", "marketValue"], "filters": ["ticker"], "sortedBy": ["weight"] }
+    }
+  },
+  {
+    "id": "etf-003",
+    "question": "What is the total market value of holdings per fund?",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Fund"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.fund.ticker, h|$h.marketValue], ['fundTicker', 'marketValue'])->groupBy([{r|$r.fundTicker}], [{r|$r.marketValue->sum()}], ['fundTicker', 'totalMarketValue'])->sort(~totalMarketValue->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["ticker"], "metrics": ["sum"], "filters": [], "sortedBy": ["totalMarketValue"] }
+    }
+  },
+  {
+    "id": "etf-004",
+    "question": "Show NAV records for SPY on 2024-01-15",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["NAVRecord", "Fund"],
+      "rootClass": "NAVRecord",
+      "referenceQuery": "etf::NAVRecord.all()->filter(n|($n.fund.ticker == 'SPY') && ($n.navDate == '2024-01-15'))->project([n|$n.navDate, n|$n.nav, n|$n.volume, n|$n.fund.ticker], ['navDate', 'nav', 'volume', 'fundTicker'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["navDate", "fundTicker"], "metrics": ["nav", "volume"], "filters": ["ticker", "navDate"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-005",
+    "question": "Show the top 3 funds by AUM",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->project([f|$f.ticker, f|$f.fundName, f|$f.aum], ['ticker', 'fundName', 'aum'])->sort(~aum->descending())->take(3)",
+      "mustContainOps": ["project", "sort", "take"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["aum"], "filters": [], "sortedBy": ["aum"] }
+    }
+  },
+  {
+    "id": "etf-006",
+    "question": "Which funds have expense ratio below 0.05?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.expenseRatio < 0.05)->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio], ['ticker', 'fundName', 'expenseRatio'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio"], "filters": ["expenseRatio"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-007",
+    "question": "Show holdings with their security sector",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Security"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.weight, h|$h.marketValue, h|$h.security.companyName, h|$h.security.sector], ['weight', 'marketValue', 'company', 'sector'])",
+      "mustContainOps": ["project"],
+      "properties": { "dimensions": ["companyName", "sector"], "metrics": ["weight", "marketValue"], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-008",
+    "question": "What is the average NAV per fund?",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["NAVRecord", "Fund"],
+      "rootClass": "NAVRecord",
+      "referenceQuery": "etf::NAVRecord.all()->project([n|$n.fund.ticker, n|$n.nav], ['fundTicker', 'nav'])->groupBy([{r|$r.fundTicker}], [{r|$r.nav->avg()}], ['fundTicker', 'avgNav'])->sort(~avgNav->descending())",
+      "mustContainOps": ["project", "groupBy"],
+      "properties": { "dimensions": ["ticker"], "metrics": ["avg"], "filters": [], "sortedBy": ["avgNav"] }
+    }
+  },
+  {
+    "id": "etf-009",
+    "question": "Show SPY holdings with security name and sector",
+    "domain": "ETF",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Fund", "Security"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->filter(h|$h.fund.ticker == 'SPY')->project([h|$h.weight, h|$h.marketValue, h|$h.security.companyName, h|$h.security.sector], ['weight', 'marketValue', 'company', 'sector'])->sort(~weight->descending())",
+      "mustContainOps": ["filter", "project", "sort"],
+      "properties": { "dimensions": ["companyName", "sector"], "metrics": ["weight", "marketValue"], "filters": ["ticker"], "sortedBy": ["weight"] }
+    }
+  },
+  {
+    "id": "etf-010",
+    "question": "Show EQUITY funds with AUM over 200000 sorted by expense ratio",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|($f.assetClass == 'EQUITY') && ($f.aum > 200000))->project([f|$f.ticker, f|$f.fundName, f|$f.aum, f|$f.expenseRatio], ['ticker', 'fundName', 'aum', 'expenseRatio'])->sort('expenseRatio')",
+      "mustContainOps": ["filter", "project", "sort"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["aum", "expenseRatio"], "filters": ["assetClass", "aum"], "sortedBy": ["expenseRatio"] }
+    }
+  },
+  {
+    "id": "etf-011",
+    "question": "Which INDEX_FUND type funds are available?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.fundType == 'INDEX_FUND')->project([f|$f.ticker, f|$f.fundName, f|$f.fundType, f|$f.aum], ['ticker', 'fundName', 'fundType', 'aum'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["aum"], "filters": ["fundType"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-012",
+    "question": "Show all holdings with weight above 5 percent",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Holding"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->filter(h|$h.weight > 5)->project([h|$h.holdingId, h|$h.weight, h|$h.marketValue], ['holdingId', 'weight', 'marketValue'])->sort(~weight->descending())",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["holdingId"], "metrics": ["weight", "marketValue"], "filters": ["weight"], "sortedBy": ["weight"] }
+    }
+  },
+  {
+    "id": "etf-013",
+    "question": "Show all US securities",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Security"],
+      "rootClass": "Security",
+      "referenceQuery": "etf::Security.all()->filter(s|$s.country == 'US')->project([s|$s.ticker, s|$s.companyName, s|$s.sector, s|$s.marketCap], ['ticker', 'companyName', 'sector', 'marketCap'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "companyName", "sector"], "metrics": ["marketCap"], "filters": ["country"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-014",
+    "question": "What is the total trading volume per fund across all NAV dates?",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["NAVRecord", "Fund"],
+      "rootClass": "NAVRecord",
+      "referenceQuery": "etf::NAVRecord.all()->project([n|$n.fund.ticker, n|$n.volume], ['fundTicker', 'volume'])->groupBy([{r|$r.fundTicker}], [{r|$r.volume->sum()}], ['fundTicker', 'totalVolume'])->sort(~totalVolume->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["ticker"], "metrics": ["sum"], "filters": [], "sortedBy": ["totalVolume"] }
+    }
+  },
+  {
+    "id": "etf-015",
+    "question": "Show EQUITY funds in the TECHNOLOGY sector",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|($f.assetClass == 'EQUITY') && ($f.sector == 'TECHNOLOGY'))->project([f|$f.ticker, f|$f.fundName, f|$f.aum, f|$f.expenseRatio], ['ticker', 'fundName', 'aum', 'expenseRatio'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["aum", "expenseRatio"], "filters": ["assetClass", "sector"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-016",
+    "question": "Show the top 10 holdings by market value across all funds",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Holding"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.holdingId, h|$h.weight, h|$h.marketValue], ['holdingId', 'weight', 'marketValue'])->sort(~marketValue->descending())->take(10)",
+      "mustContainOps": ["project", "sort", "take"],
+      "properties": { "dimensions": ["holdingId"], "metrics": ["weight", "marketValue"], "filters": [], "sortedBy": ["marketValue"] }
+    }
+  },
+  {
+    "id": "etf-017",
+    "question": "Which funds were launched after 2000?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.inceptionDate > '2000-01-01')->project([f|$f.ticker, f|$f.fundName, f|$f.inceptionDate], ['ticker', 'fundName', 'inceptionDate'])->sort('inceptionDate')",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "fundName", "inceptionDate"], "metrics": [], "filters": ["inceptionDate"], "sortedBy": ["inceptionDate"] }
+    }
+  },
+  {
+    "id": "etf-018",
+    "question": "Show the number of holdings per sector",
+    "domain": "ETF",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Security"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.security.sector, h|$h.holdingId], ['sector', 'holdingId'])->groupBy([{r|$r.sector}], [{r|$r.holdingId->count()}], ['sector', 'holdingCount'])->sort(~holdingCount->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["sector"], "metrics": ["count"], "filters": [], "sortedBy": ["holdingCount"] }
+    }
+  },
+  {
+    "id": "etf-019",
+    "question": "Which funds track the S&P 500 benchmark?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.benchmarkIndex == 'S&P 500')->project([f|$f.ticker, f|$f.fundName, f|$f.benchmarkIndex, f|$f.expenseRatio], ['ticker', 'fundName', 'benchmark', 'expenseRatio'])",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "fundName", "benchmarkIndex"], "metrics": ["expenseRatio"], "filters": ["benchmarkIndex"], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-020",
+    "question": "Compare expense ratios of all ETF-type funds sorted by expense ratio ascending",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.fundType == 'ETF')->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio, f|$f.benchmarkIndex], ['ticker', 'fundName', 'expenseRatio', 'benchmark'])->sort('expenseRatio')",
+      "mustContainOps": ["filter", "project", "sort"],
+      "properties": { "dimensions": ["ticker", "fundName", "benchmarkIndex"], "metrics": ["expenseRatio"], "filters": ["fundType"], "sortedBy": ["expenseRatio"] }
+    }
+  },
+  {
+    "id": "etf-021",
+    "question": "Show securities with market cap above 2 trillion (2000000 millions)",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expected": {
+      "mustIncludeClasses": ["Security"],
+      "rootClass": "Security",
+      "referenceQuery": "etf::Security.all()->filter(s|$s.marketCap > 2000000)->project([s|$s.ticker, s|$s.companyName, s|$s.marketCap], ['ticker', 'companyName', 'marketCap'])->sort(~marketCap->descending())",
+      "mustContainOps": ["filter", "project"],
+      "properties": { "dimensions": ["ticker", "companyName"], "metrics": ["marketCap"], "filters": ["marketCap"], "sortedBy": ["marketCap"] }
+    }
+  },
+  {
+    "id": "etf-022",
+    "question": "What is the total shares held per fund?",
+    "domain": "ETF",
+    "difficulty": "medium",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Fund"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.fund.ticker, h|$h.shares], ['fundTicker', 'shares'])->groupBy([{r|$r.fundTicker}], [{r|$r.shares->sum()}], ['fundTicker', 'totalShares'])->sort(~totalShares->descending())",
+      "mustContainOps": ["project", "groupBy", "sort"],
+      "properties": { "dimensions": ["ticker"], "metrics": ["sum"], "filters": [], "sortedBy": ["totalShares"] }
+    }
+  },
+
+  {
+    "id": "nw-021",
+    "question": "Show the full name of each employee (first name and last name combined)",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Employee"],
+      "rootClass": "Employee",
+      "referenceQuery": "northwind::model::Employee.all()->project([e|$e.firstName, e|$e.lastName], ['firstName', 'lastName'])",
+      "mustContainOps": ["project"],
+      "requiresDerivedAttribute": true,
+      "derivedAttributeNote": "fullName must be derived by concatenating firstName + lastName; no fullName property exists on Employee",
+      "properties": { "dimensions": ["firstName", "lastName"], "metrics": [], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-022",
+    "question": "What is the line total (unit price times quantity) for each order detail?",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["OrderDetail"],
+      "rootClass": "OrderDetail",
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.unitPrice, d|$d.quantity, d|$d.product.productName], ['unitPrice', 'quantity', 'product'])",
+      "mustContainOps": ["project"],
+      "requiresDerivedAttribute": true,
+      "derivedAttributeNote": "lineTotal must be computed as unitPrice * quantity; no lineTotal property exists on OrderDetail",
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice", "quantity"], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "nw-023",
+    "question": "Show the discounted price (unit price minus discount) for each order detail with product name",
+    "domain": "Northwind",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["OrderDetail", "Product"],
+      "rootClass": "OrderDetail",
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.product.productName, d|$d.unitPrice, d|$d.discount], ['product', 'unitPrice', 'discount'])",
+      "mustContainOps": ["project"],
+      "requiresDerivedAttribute": true,
+      "derivedAttributeNote": "discountedPrice must be computed as unitPrice * (1 - discount); no discountedPrice property exists",
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice", "discount"], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-023",
+    "question": "Show the price per share (market value divided by shares) for each holding with fund ticker",
+    "domain": "ETF",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Holding", "Fund"],
+      "rootClass": "Holding",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.fund.ticker, h|$h.marketValue, h|$h.shares], ['fundTicker', 'marketValue', 'shares'])",
+      "mustContainOps": ["project"],
+      "requiresDerivedAttribute": true,
+      "derivedAttributeNote": "pricePerShare must be computed as marketValue / shares; no pricePerShare property exists on Holding",
+      "properties": { "dimensions": ["fundTicker"], "metrics": ["marketValue", "shares"], "filters": [], "sortedBy": [] }
+    }
+  },
+  {
+    "id": "etf-024",
+    "question": "Show the expense ratio in basis points for each fund (expense ratio times 10000)",
+    "domain": "ETF",
+    "difficulty": "hard",
+    "expected": {
+      "mustIncludeClasses": ["Fund"],
+      "rootClass": "Fund",
+      "referenceQuery": "etf::Fund.all()->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio], ['ticker', 'fundName', 'expenseRatio'])",
+      "mustContainOps": ["project"],
+      "requiresDerivedAttribute": true,
+      "derivedAttributeNote": "expenseRatioBps must be computed as expenseRatio * 10000; this is a unit conversion, not a stored property",
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio"], "filters": [], "sortedBy": [] }
+    }
+  }
+]

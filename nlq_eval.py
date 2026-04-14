@@ -1,0 +1,431 @@
+"""
+NLQ Evaluation Framework — scoring module, LLM judge, and eval runner.
+
+Measures quality of the NLQ pipeline (POST /engine/nlq) across dimensions:
+  - Retrieval recall & precision (class-level)
+  - Root class routing accuracy
+  - Operation coverage (filter, project, sort, etc.)
+  - Answer accuracy (column overlap + row count comparison)
+  - LLM-as-judge (completeness, faithfulness, relevance)
+  - Fidelity (weighted composite score)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import urllib.request
+import urllib.error
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional, Union
+
+
+# ── Data structures ──────────────────────────────────────────────────────────
+
+@dataclass
+class EvalCase:
+    id: str
+    question: str
+    domain: str
+    difficulty: str
+    expected: dict  # mustIncludeClasses, rootClass, referenceQuery, mustContainOps, properties
+
+
+@dataclass
+class EvalResult:
+    case_id: str
+    success: bool
+    retrieval_recall: float = 0.0
+    retrieval_precision: float = 0.0
+    root_class_match: bool = False
+    ops_coverage: float = 0.0
+    answer_accuracy: float = 0.0
+    judge_completeness: float = 0.0
+    judge_faithfulness: float = 0.0
+    judge_relevance: float = 0.0
+    judge_fidelity: float = 0.0
+    overall_score: float = 0.0
+    generated_query: str = ""
+    latency_ms: int = 0
+    error: Optional[str] = None
+    judge_rationale: str = ""
+
+
+# ── Scoring functions ────────────────────────────────────────────────────────
+
+def score_retrieval(expected: dict, retrieved_classes: list[str]) -> tuple[float, float]:
+    """
+    Compute retrieval recall and precision.
+    Returns (recall, precision).
+    """
+    must_include = set(expected.get("mustIncludeClasses", []))
+    if not must_include:
+        return 1.0, 1.0
+
+    # Normalize: strip package prefixes, compare base class names
+    def base_name(cls: str) -> str:
+        return cls.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+
+    must_base = {base_name(c) for c in must_include}
+    retrieved_base = {base_name(c) for c in retrieved_classes} if retrieved_classes else set()
+
+    intersection = must_base & retrieved_base
+    recall = len(intersection) / len(must_base) if must_base else 1.0
+    precision = len(intersection) / len(retrieved_base) if retrieved_base else 0.0
+
+    return recall, precision
+
+
+def score_routing(expected_root: str, actual_root: str) -> bool:
+    """Check if the root class matches (ignoring package prefix)."""
+    def base_name(cls: str) -> str:
+        return cls.rsplit("::", 1)[-1].rsplit(".", 1)[-1] if cls else ""
+
+    return base_name(expected_root) == base_name(actual_root)
+
+
+def score_ops(must_contain_ops: list[str], generated_query: str) -> float:
+    """
+    Scan the generated Pure query for expected operation names.
+    Returns coverage ratio: |found ops| / |expected ops|.
+    """
+    if not must_contain_ops:
+        return 1.0
+
+    found = 0
+    query_lower = generated_query.lower()
+    for op in must_contain_ops:
+        # Match operation names like ->filter(, ->project(, ->sort(, ->groupBy(
+        pattern = rf'->\s*{re.escape(op.lower())}\s*\('
+        if re.search(pattern, query_lower):
+            found += 1
+        elif op.lower() in query_lower:
+            # Fallback: bare mention
+            found += 1
+
+    return found / len(must_contain_ops)
+
+
+def score_answer_accuracy(
+    model_src: str,
+    ref_query: str,
+    gen_query: str,
+    engine_url: str,
+) -> float:
+    """
+    Execute both reference and generated queries via POST /engine/execute.
+    Compare: (a) column name overlap, (b) row count ratio.
+    Returns 0.0-1.0.
+    """
+    def execute(query: str) -> Optional[dict]:
+        full_code = model_src.strip() + "\n\n" + query.strip()
+        payload = json.dumps({"code": full_code}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{engine_url}/engine/execute",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read())
+        except Exception:
+            return None
+
+    ref_result = execute(ref_query)
+    gen_result = execute(gen_query)
+
+    if not ref_result or not ref_result.get("success"):
+        return 0.0
+    if not gen_result or not gen_result.get("success"):
+        return 0.0
+
+    # Column overlap
+    ref_cols = set(ref_result.get("columns", []))
+    gen_cols = set(gen_result.get("columns", []))
+    if ref_cols:
+        col_overlap = len(ref_cols & gen_cols) / len(ref_cols)
+    else:
+        col_overlap = 1.0
+
+    # Row count ratio
+    ref_rows = ref_result.get("rowCount", 0)
+    gen_rows = gen_result.get("rowCount", 0)
+    if ref_rows > 0 and gen_rows > 0:
+        row_ratio = min(ref_rows, gen_rows) / max(ref_rows, gen_rows)
+    elif ref_rows == 0 and gen_rows == 0:
+        row_ratio = 1.0
+    else:
+        row_ratio = 0.0
+
+    return 0.6 * col_overlap + 0.4 * row_ratio
+
+
+def llm_judge(
+    question: str,
+    ref_query: str,
+    gen_query: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+) -> tuple[float, float, float, float, str]:
+    """
+    Use Claude as a judge to score the generated query vs reference.
+    Returns (completeness, faithfulness, relevance, fidelity, rationale).
+    Scores are 1-5.
+    """
+    judge_prompt = f"""You are evaluating the quality of a generated Pure query against a reference query for a natural language question.
+
+Question: {question}
+
+Reference Query:
+{ref_query}
+
+Generated Query:
+{gen_query}
+
+Score the generated query on four dimensions (1-5 scale each):
+
+1. **Completeness** (1-5): Does the generated query capture all the data elements and operations requested in the question? 5 = perfectly complete, 1 = missing most elements.
+
+2. **Faithfulness** (1-5): Does the generated query accurately represent what was asked, without introducing incorrect filters, wrong classes, or hallucinated operations? 5 = fully faithful, 1 = significantly wrong.
+
+3. **Relevance** (1-5): Does the generated query return data that would actually answer the user's question? 5 = perfectly relevant results, 1 = irrelevant results.
+
+4. **Fidelity** (1-5): When the question requires derived or computed attributes that don't exist directly on the model (e.g. "full name" from firstName+lastName, "line total" from unitPrice*quantity, "price per unit" from marketValue/shares), does the generated query correctly compose them from available properties using appropriate operations (concatenation, arithmetic, string functions)? Or does it hallucinate a non-existent property? Score 5 if all derived attributes are correctly synthesized, 3 if the question doesn't require any derived attributes (N/A), 1 if the query references non-existent fields instead of computing them.
+
+Return your response as JSON only, no markdown:
+{{"completeness": <int>, "faithfulness": <int>, "relevance": <int>, "fidelity": <int>, "rationale": "<brief explanation>"}}"""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            messages=[{"role": "user", "content": judge_prompt}],
+        )
+        text = response.content[0].text.strip()
+        # Parse JSON from response
+        # Strip markdown code fences if present
+        text = re.sub(r'^```\w*\n?', '', text).rstrip('`').strip()
+        result = json.loads(text)
+        return (
+            float(result.get("completeness", 3)),
+            float(result.get("faithfulness", 3)),
+            float(result.get("relevance", 3)),
+            float(result.get("fidelity", 3)),
+            result.get("rationale", ""),
+        )
+    except Exception as e:
+        return 3.0, 3.0, 3.0, 3.0, f"Judge error: {e}"
+
+
+def compute_overall_score(result: EvalResult) -> float:
+    """
+    Weighted composite overall score:
+      0.15 * recall
+    + 0.10 * precision
+    + 0.25 * answer_accuracy
+    + 0.10 * (completeness / 5)
+    + 0.10 * (faithfulness / 5)
+    + 0.10 * (relevance / 5)
+    + 0.20 * (fidelity / 5)
+    """
+    return (
+        0.15 * result.retrieval_recall
+        + 0.10 * result.retrieval_precision
+        + 0.25 * result.answer_accuracy
+        + 0.10 * (result.judge_completeness / 5.0)
+        + 0.10 * (result.judge_faithfulness / 5.0)
+        + 0.10 * (result.judge_relevance / 5.0)
+        + 0.20 * (result.judge_fidelity / 5.0)
+    )
+
+
+# ── Case loading ─────────────────────────────────────────────────────────────
+
+def load_cases(path: str | Path) -> list[EvalCase]:
+    """Load eval cases from a JSON file."""
+    with open(path, "r") as f:
+        raw = json.load(f)
+
+    cases = []
+    for item in raw:
+        cases.append(EvalCase(
+            id=item["id"],
+            question=item["question"],
+            domain=item["domain"],
+            difficulty=item["difficulty"],
+            expected=item["expected"],
+        ))
+    return cases
+
+
+# ── NLQ endpoint call ────────────────────────────────────────────────────────
+
+def _call_nlq(model_src: str, question: str, engine_url: str, llm_model: str = "") -> dict:
+    """Call POST /engine/nlq and return the response dict."""
+    payload = {"code": model_src, "question": question}
+    if llm_model:
+        payload["model"] = llm_model
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{engine_url}/engine/nlq",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        return {"success": False, "error": f"HTTP {e.code}: {body[:500]}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── Eval runner ──────────────────────────────────────────────────────────────
+
+def run_eval(
+    cases: list[EvalCase],
+    model_src: str,
+    engine_url: str,
+    llm_model: str = "",
+    api_key: str = "",
+    domain_filter: str = "",
+    progress_callback=None,
+) -> list[EvalResult]:
+    """
+    Run evaluation across all cases.
+    Calls NLQ endpoint, scores each case, returns list of EvalResult.
+    progress_callback(i, total, case_id) is called after each case if provided.
+    """
+    filtered = cases
+    if domain_filter and domain_filter != "All":
+        filtered = [c for c in cases if c.domain == domain_filter]
+
+    results = []
+    for i, case in enumerate(filtered):
+        t0 = time.time()
+        nlq_resp = _call_nlq(model_src, case.question, engine_url, llm_model)
+        latency = int((time.time() - t0) * 1000)
+
+        result = EvalResult(case_id=case.id, success=False, latency_ms=latency)
+
+        if not nlq_resp.get("success"):
+            result.error = nlq_resp.get("error", "NLQ call failed")
+            results.append(result)
+            if progress_callback:
+                progress_callback(i + 1, len(filtered), case.id)
+            continue
+
+        result.success = True
+        gen_query = nlq_resp.get("pureQuery", "")
+        result.generated_query = gen_query
+
+        # Retrieval scoring
+        retrieved = nlq_resp.get("retrievedClasses", [])
+        result.retrieval_recall, result.retrieval_precision = score_retrieval(
+            case.expected, retrieved
+        )
+
+        # Root class routing
+        actual_root = nlq_resp.get("rootClass", "")
+        result.root_class_match = score_routing(
+            case.expected.get("rootClass", ""), actual_root
+        )
+
+        # Ops coverage
+        result.ops_coverage = score_ops(
+            case.expected.get("mustContainOps", []), gen_query
+        )
+
+        # Answer accuracy (only if we have a reference query)
+        ref_query = case.expected.get("referenceQuery", "")
+        if ref_query and gen_query:
+            result.answer_accuracy = score_answer_accuracy(
+                model_src, ref_query, gen_query, engine_url
+            )
+
+        # LLM judge (only if API key is provided)
+        if api_key and ref_query and gen_query:
+            comp, faith, rel, fid, rationale = llm_judge(
+                case.question, ref_query, gen_query, api_key
+            )
+            result.judge_completeness = comp
+            result.judge_faithfulness = faith
+            result.judge_relevance = rel
+            result.judge_fidelity = fid
+            result.judge_rationale = rationale
+        else:
+            # Default to neutral scores when no judge is available
+            result.judge_completeness = 3.0
+            result.judge_faithfulness = 3.0
+            result.judge_relevance = 3.0
+            result.judge_fidelity = 3.0
+            result.judge_rationale = "No API key provided; using default scores"
+
+        # Overall score
+        result.overall_score = compute_overall_score(result)
+
+        results.append(result)
+        if progress_callback:
+            progress_callback(i + 1, len(filtered), case.id)
+
+    return results
+
+
+# ── Summary stats ────────────────────────────────────────────────────────────
+
+def summary_stats(results: list[EvalResult]) -> dict:
+    """Compute aggregate statistics from eval results."""
+    if not results:
+        return {
+            "count": 0,
+            "avg_overall_score": 0.0,
+            "avg_recall": 0.0,
+            "avg_precision": 0.0,
+            "avg_answer_accuracy": 0.0,
+            "avg_completeness": 0.0,
+            "avg_faithfulness": 0.0,
+            "avg_relevance": 0.0,
+            "avg_fidelity": 0.0,
+            "pass_rate": 0.0,
+            "success_rate": 0.0,
+            "by_difficulty": {},
+        }
+
+    n = len(results)
+    successful = [r for r in results if r.success]
+
+    stats = {
+        "count": n,
+        "avg_overall_score": sum(r.overall_score for r in results) / n,
+        "avg_recall": sum(r.retrieval_recall for r in results) / n,
+        "avg_precision": sum(r.retrieval_precision for r in results) / n,
+        "avg_answer_accuracy": sum(r.answer_accuracy for r in results) / n,
+        "avg_completeness": sum(r.judge_completeness for r in results) / n,
+        "avg_faithfulness": sum(r.judge_faithfulness for r in results) / n,
+        "avg_relevance": sum(r.judge_relevance for r in results) / n,
+        "avg_fidelity": sum(r.judge_fidelity for r in results) / n,
+        "pass_rate": sum(1 for r in results if r.overall_score > 0.6) / n,
+        "success_rate": len(successful) / n,
+    }
+
+    # Per-domain breakdown
+    by_difficulty: dict[str, dict] = {}
+    for prefix_label, prefix in [("Northwind", "nw"), ("ETF", "etf")]:
+        group = [r for r in results if r.case_id.startswith(prefix)]
+        if group:
+            ng = len(group)
+            by_difficulty[prefix_label] = {
+                "count": ng,
+                "avg_overall_score": sum(r.overall_score for r in group) / ng,
+                "avg_recall": sum(r.retrieval_recall for r in group) / ng,
+                "pass_rate": sum(1 for r in group if r.overall_score > 0.6) / ng,
+            }
+
+    stats["by_difficulty"] = by_difficulty
+    return stats
