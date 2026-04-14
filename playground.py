@@ -32,6 +32,11 @@ import urllib.request
 import urllib.error
 from typing import Optional, Tuple, List, Dict
 import streamlit as st
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed; rely on env vars directly
 
 ENGINE_URL = "http://localhost:8080"
 
@@ -1169,7 +1174,8 @@ with tab_eval:
             "Anthropic API key (for LLM judge):",
             type="password",
             key="eval_api_key",
-            help="Optional. If provided, Claude Sonnet will score completeness/faithfulness/relevance.",
+            value=os.getenv("ANTHROPIC_API_KEY", ""),
+            help="Auto-loaded from .env if available. Claude Sonnet will score completeness/faithfulness/relevance/fidelity.",
         )
 
     btn_eval = st.button("🚀 Run Eval", type="primary", key="eval_run_btn")
@@ -1240,18 +1246,19 @@ with tab_eval:
         st.markdown("### Summary Metrics")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Overall Score", f"{eval_stats['avg_overall_score']:.2f}",
-                  help="Weighted composite (0-1). Combines recall (15%), precision (10%), "
-                       "answer accuracy (25%), completeness (10%), faithfulness (10%), "
-                       "relevance (10%), and fidelity (20%).")
+                  help="Weighted composite (0-1). Combines recall (15%), precision (5%), "
+                       "answer accuracy (20%), ops coverage (10%), completeness (10%), "
+                       "faithfulness (10%), relevance (10%), and fidelity (20%).")
         m2.metric("Recall", f"{eval_stats['avg_recall']:.2f}",
                   help="Retrieval recall (0-1). Fraction of expected classes that the NLQ pipeline "
                        "actually retrieved. 1.0 = all required classes were found.")
         m3.metric("Precision", f"{eval_stats['avg_precision']:.2f}",
-                  help="Retrieval precision (0-1). Fraction of retrieved classes that were actually "
-                       "expected. Low precision means the pipeline retrieved irrelevant classes.")
+                  help="Retrieval precision (0-1). F1-style harmonic mean — penalizes massive "
+                       "over-retrieval but is forgiving for a few extra context classes.")
         m4.metric("Answer Acc.", f"{eval_stats['avg_answer_accuracy']:.2f}",
                   help="Answer accuracy (0-1). Compares the generated query's results against the "
-                       "reference query: 60% column name overlap + 40% row count similarity.")
+                       "reference query: 60% normalized column name overlap (with fuzzy matching) "
+                       "+ 40% row count similarity.")
 
         j1, j2, j3, j4 = st.columns(4)
         j1.metric("Completeness", f"{eval_stats['avg_completeness']:.1f}/5",

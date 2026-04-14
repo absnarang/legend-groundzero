@@ -16,6 +16,7 @@ from nlq_eval import (
     score_ops,
     compute_overall_score,
     load_cases,
+    _normalize_col,
 )
 
 
@@ -46,7 +47,8 @@ class TestScoreRetrieval:
         ]
         recall, precision = score_retrieval(expected, retrieved)
         assert recall == 1.0
-        assert precision == 0.5
+        # F1-style: 2*2/(2+4) = 4/6 ≈ 0.667
+        assert abs(precision - 2 / 3) < 0.01
 
     def test_zero_recall(self):
         expected = {"mustIncludeClasses": ["Product", "Category"]}
@@ -137,6 +139,7 @@ class TestComputeOverallScore:
             success=True,
             retrieval_recall=1.0,
             retrieval_precision=1.0,
+            ops_coverage=1.0,
             answer_accuracy=1.0,
             judge_completeness=5.0,
             judge_faithfulness=5.0,
@@ -168,19 +171,20 @@ class TestComputeOverallScore:
             retrieval_recall=0.8,
             retrieval_precision=0.5,
             answer_accuracy=0.7,
+            ops_coverage=0.9,
             judge_completeness=4.0,
             judge_faithfulness=3.0,
             judge_relevance=4.0,
             judge_fidelity=4.0,
         )
-        # 0.15*0.8 + 0.10*0.5 + 0.25*0.7 + 0.10*(4/5) + 0.10*(3/5) + 0.10*(4/5) + 0.20*(4/5)
-        # = 0.12 + 0.05 + 0.175 + 0.08 + 0.06 + 0.08 + 0.16 = 0.725
+        # 0.15*0.8 + 0.05*0.5 + 0.20*0.7 + 0.10*0.9 + 0.10*(4/5) + 0.10*(3/5) + 0.10*(4/5) + 0.20*(4/5)
+        # = 0.12 + 0.025 + 0.14 + 0.09 + 0.08 + 0.06 + 0.08 + 0.16 = 0.755
         score = compute_overall_score(result)
-        assert abs(score - 0.725) < 0.01
+        assert abs(score - 0.755) < 0.01
 
     def test_weights_sum_to_one(self):
         """Verify that the weight coefficients sum to 1.0."""
-        assert abs(0.15 + 0.10 + 0.25 + 0.10 + 0.10 + 0.10 + 0.20 - 1.0) < 0.001
+        assert abs(0.15 + 0.05 + 0.20 + 0.10 + 0.10 + 0.10 + 0.10 + 0.20 - 1.0) < 0.001
 
     def test_fidelity_weight_is_highest_judge(self):
         """Fidelity has the highest weight (20%) among judge dimensions."""
@@ -231,3 +235,23 @@ class TestLoadCases:
         cases = load_cases(cases_path)
         etf = [c for c in cases if c.domain == "ETF"]
         assert len(etf) >= 20
+
+
+# ── _normalize_col tests ─────────────────────────────────────────────────────
+
+class TestNormalizeCol:
+    def test_lowercase(self):
+        assert _normalize_col("ProductName") == "productname"
+
+    def test_strip_non_alnum(self):
+        assert _normalize_col("Unit Price") == "unitprice"
+        assert _normalize_col("unit_price") == "unitprice"
+
+    def test_exact_match_after_normalize(self):
+        assert _normalize_col("productName") == _normalize_col("Product Name")
+
+    def test_containment_match(self):
+        """Fuzzy containment: 'name' is contained in 'productname'."""
+        n1 = _normalize_col("name")
+        n2 = _normalize_col("productName")
+        assert n1 in n2

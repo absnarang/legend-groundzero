@@ -74,7 +74,7 @@ def score_retrieval(expected: dict, retrieved_classes: list[str]) -> tuple[float
 
     intersection = must_base & retrieved_base
     recall = len(intersection) / len(must_base) if must_base else 1.0
-    precision = len(intersection) / len(retrieved_base) if retrieved_base else 0.0
+    precision = (2 * len(intersection)) / (len(intersection) + len(retrieved_base)) if retrieved_base else 0.0
 
     return recall, precision
 
@@ -107,6 +107,11 @@ def score_ops(must_contain_ops: list[str], generated_query: str) -> float:
             found += 1
 
     return found / len(must_contain_ops)
+
+
+def _normalize_col(name: str) -> str:
+    """Lowercase and strip non-alphanumeric chars for fuzzy column comparison."""
+    return re.sub(r'[^a-z0-9]', '', name.lower())
 
 
 def score_answer_accuracy(
@@ -142,11 +147,19 @@ def score_answer_accuracy(
     if not gen_result or not gen_result.get("success"):
         return 0.0
 
-    # Column overlap
-    ref_cols = set(ref_result.get("columns", []))
-    gen_cols = set(gen_result.get("columns", []))
-    if ref_cols:
-        col_overlap = len(ref_cols & gen_cols) / len(ref_cols)
+    # Column overlap (normalized + fuzzy)
+    ref_cols_raw = ref_result.get("columns", [])
+    gen_cols_raw = gen_result.get("columns", [])
+    ref_normed = [_normalize_col(c) for c in ref_cols_raw]
+    gen_normed = [_normalize_col(c) for c in gen_cols_raw]
+    if ref_normed:
+        matched = 0
+        for rc in ref_normed:
+            if rc in gen_normed:
+                matched += 1
+            elif any(rc in gc or gc in rc for gc in gen_normed):
+                matched += 1
+        col_overlap = matched / len(ref_normed)
     else:
         col_overlap = 1.0
 
@@ -226,8 +239,9 @@ def compute_overall_score(result: EvalResult) -> float:
     """
     Weighted composite overall score:
       0.15 * recall
-    + 0.10 * precision
-    + 0.25 * answer_accuracy
+    + 0.05 * precision
+    + 0.20 * answer_accuracy
+    + 0.10 * ops_coverage
     + 0.10 * (completeness / 5)
     + 0.10 * (faithfulness / 5)
     + 0.10 * (relevance / 5)
@@ -235,8 +249,9 @@ def compute_overall_score(result: EvalResult) -> float:
     """
     return (
         0.15 * result.retrieval_recall
-        + 0.10 * result.retrieval_precision
-        + 0.25 * result.answer_accuracy
+        + 0.05 * result.retrieval_precision
+        + 0.20 * result.answer_accuracy
+        + 0.10 * result.ops_coverage
         + 0.10 * (result.judge_completeness / 5.0)
         + 0.10 * (result.judge_faithfulness / 5.0)
         + 0.10 * (result.judge_relevance / 5.0)
