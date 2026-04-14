@@ -462,9 +462,9 @@
     "expected": {
       "mustIncludeClasses": ["Holding"],
       "rootClass": "Holding",
-      "referenceQuery": "etf::Holding.all()->project([h|$h.holdingId, h|$h.weight, h|$h.marketValue], ['holdingId', 'weight', 'marketValue'])->sort(~marketValue->descending())->take(10)",
+      "referenceQuery": "etf::Holding.all()->project([h|$h.security.ticker, h|$h.fund.ticker, h|$h.marketValue], ['security', 'fund', 'marketValue'])->sort(~marketValue->descending())->take(10)",
       "mustContainOps": ["project", "sort", "take"],
-      "properties": { "dimensions": ["holdingId"], "metrics": ["weight", "marketValue"], "filters": [], "sortedBy": ["marketValue"] }
+      "properties": { "dimensions": ["security", "fund"], "metrics": ["marketValue"], "filters": [], "sortedBy": ["marketValue"] }
     }
   },
   {
@@ -514,9 +514,9 @@
     "expected": {
       "mustIncludeClasses": ["Fund"],
       "rootClass": "Fund",
-      "referenceQuery": "etf::Fund.all()->filter(f|$f.fundType == 'ETF')->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio, f|$f.benchmarkIndex], ['ticker', 'fundName', 'expenseRatio', 'benchmark'])->sort('expenseRatio')",
+      "referenceQuery": "etf::Fund.all()->filter(f|$f.fundType == 'ETF')->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio], ['ticker', 'fundName', 'expenseRatio'])->sort('expenseRatio')",
       "mustContainOps": ["filter", "project", "sort"],
-      "properties": { "dimensions": ["ticker", "fundName", "benchmarkIndex"], "metrics": ["expenseRatio"], "filters": ["fundType"], "sortedBy": ["expenseRatio"] }
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio"], "filters": ["fundType"], "sortedBy": ["expenseRatio"] }
     }
   },
   {

@@ -11,16 +11,30 @@ ENGINE_URL = "http://localhost:8080"
 # ══════════════════════════════════════════════════════════════════════════════
 
 NORTHWIND_MODEL = """\
+// ── NLQ Profile ────────────────────────────────────────────────────────────
+
+Profile nlq::NlqProfile
+{
+    stereotypes: [core, junction, timeseries, calculated, sensitive];
+    tags: [description, synonyms, businessDomain, importance, exampleQuestions, sampleValues, unit, whenToUse];
+}
+
 // ── Domain classes ─────────────────────────────────────────────────────────
 
-Class northwind::model::Category
+Class {nlq::NlqProfile.description = 'A product category or grouping',
+       nlq::NlqProfile.synonyms = 'category, group, type, product category',
+       nlq::NlqProfile.businessDomain = 'Product Catalog',
+       nlq::NlqProfile.importance = 'medium'} northwind::model::Category
 {
     categoryId:   Integer[1];
     categoryName: String[1];
     description:  String[0..1];
 }
 
-Class northwind::model::Supplier
+Class {nlq::NlqProfile.description = 'A product supplier or vendor',
+       nlq::NlqProfile.synonyms = 'supplier, vendor, manufacturer',
+       nlq::NlqProfile.businessDomain = 'Product Catalog',
+       nlq::NlqProfile.importance = 'low'} northwind::model::Supplier
 {
     supplierId:  Integer[1];
     companyName: String[1];
@@ -28,7 +42,12 @@ Class northwind::model::Supplier
     city:        String[0..1];
 }
 
-Class northwind::model::Product
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A product in the catalog with unit price and stock info',
+       nlq::NlqProfile.synonyms = 'product, item, goods, merchandise',
+       nlq::NlqProfile.businessDomain = 'Product Catalog',
+       nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.exampleQuestions = 'What is the average unit price per category?|List products sorted by price|Which products are discontinued?'} northwind::model::Product
 {
     productId:    Integer[1];
     productName:  String[1];
@@ -37,7 +56,12 @@ Class northwind::model::Product
     discontinued: Integer[1];
 }
 
-Class northwind::model::Customer
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A customer who places orders',
+       nlq::NlqProfile.synonyms = 'customer, client, buyer, account',
+       nlq::NlqProfile.businessDomain = 'Sales',
+       nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.exampleQuestions = 'How many orders does each customer have?|List customers from Germany'} northwind::model::Customer
 {
     customerId:  String[1];
     companyName: String[1];
@@ -46,7 +70,10 @@ Class northwind::model::Customer
     country:     String[0..1];
 }
 
-Class northwind::model::Employee
+Class {nlq::NlqProfile.description = 'An employee who processes orders',
+       nlq::NlqProfile.synonyms = 'employee, staff, rep, sales rep',
+       nlq::NlqProfile.businessDomain = 'Sales',
+       nlq::NlqProfile.importance = 'medium'} northwind::model::Employee
 {
     employeeId: Integer[1];
     firstName:  String[1];
@@ -57,7 +84,12 @@ Class northwind::model::Employee
     hireDate:   String[0..1];
 }
 
-Class northwind::model::Order
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A customer order header with date and shipping info',
+       nlq::NlqProfile.synonyms = 'order, purchase, sale, transaction',
+       nlq::NlqProfile.businessDomain = 'Sales',
+       nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.exampleQuestions = 'Show orders from Germany|List orders by freight|How many orders per country?'} northwind::model::Order
 {
     orderId:     Integer[1];
     orderDate:   String[0..1];
@@ -66,7 +98,13 @@ Class northwind::model::Order
     shipCity:    String[0..1];
 }
 
-Class northwind::model::OrderDetail
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A line item within an order — one row per product per order',
+       nlq::NlqProfile.synonyms = 'order detail, line item, order line, order item',
+       nlq::NlqProfile.businessDomain = 'Sales',
+       nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.whenToUse = 'Use OrderDetail as root class when the question asks about products within orders, order lines, or needs to show per-product detail for orders. Start from OrderDetail and navigate to Order and Product.',
+       nlq::NlqProfile.exampleQuestions = 'Show each order with product names from its order details|What are the quantities per order?|List order lines with product info'} northwind::model::OrderDetail
 {
     unitPrice: Float[1];
     quantity:  Integer[1];
