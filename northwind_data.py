@@ -47,6 +47,7 @@ Class <<nlq::NlqProfile.core>>
        nlq::NlqProfile.synonyms = 'product, item, goods, merchandise',
        nlq::NlqProfile.businessDomain = 'Product Catalog',
        nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.whenToUse = 'Use Product as root class for questions about catalog prices, categories, suppliers, or stock levels. Product.unitPrice is the catalog list price; OrderDetail.unitPrice is the per-order transaction price.',
        nlq::NlqProfile.exampleQuestions = 'What is the average unit price per category?|List products sorted by price|Which products are discontinued?'} northwind::model::Product
 {
     productId:    Integer[1];

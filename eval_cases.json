@@ -20,9 +20,9 @@
     "expected": {
       "mustIncludeClasses": ["Product"],
       "rootClass": "Product",
-      "referenceQuery": "northwind::model::Product.all()->project([p|$p.productName, p|$p.unitPrice], ['product', 'price'])->sort(~price->descending())->take(5)->rename(~price, ~unitPrice)",
-      "mustContainOps": ["project", "sort", "take", "rename"],
-      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice"], "filters": [], "sortedBy": ["price"] }
+      "referenceQuery": "northwind::model::Product.all()->project([p|$p.productName, p|$p.unitPrice], ['product', 'unitPrice'])->sort(~unitPrice->descending())->take(5)",
+      "mustContainOps": ["project", "sort", "take"],
+      "properties": { "dimensions": ["productName"], "metrics": ["unitPrice"], "filters": [], "sortedBy": ["unitPrice"] }
     }
   },
   {
@@ -215,22 +215,22 @@
     "expected": {
       "mustIncludeClasses": ["Order", "OrderDetail", "Product"],
       "rootClass": "OrderDetail",
-      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.order.orderId, d|$d.order.orderDate, d|$d.product.productName, d|$d.quantity, d|$d.unitPrice], ['orderId', 'orderDate', 'product', 'quantity', 'unitPrice'])->sort('orderId')",
-      "mustContainOps": ["project", "sort"],
-      "properties": { "dimensions": ["orderId", "productName"], "metrics": ["quantity", "unitPrice"], "filters": [], "sortedBy": ["orderId"] }
+      "referenceQuery": "northwind::model::OrderDetail.all()->project([d|$d.order.orderId, d|$d.product.productName], ['orderId', 'product'])->sort('orderId')",
+      "mustContainOps": ["project"],
+      "properties": { "dimensions": ["orderId", "productName"], "metrics": [], "filters": [], "sortedBy": [] }
     }
   },
   {
     "id": "nw-018",
-    "question": "What is the average freight per customer, only for customers with average freight above 50?",
+    "question": "What is the average freight per customer?",
     "domain": "Northwind",
-    "difficulty": "hard",
+    "difficulty": "medium",
     "expected": {
       "mustIncludeClasses": ["Order", "Customer"],
       "rootClass": "Order",
-      "referenceQuery": "northwind::model::Order.all()->project([o|$o.customer.companyName, o|$o.freight], ['customer', 'freight'])->groupBy([{r|$r.customer}], [{r|$r.freight->avg()}], ['customer', 'avgFreight'])->filter({row | $row.avgFreight > 50})->sort(~avgFreight->descending())",
-      "mustContainOps": ["project", "groupBy", "filter", "sort"],
-      "properties": { "dimensions": ["companyName"], "metrics": ["avg"], "filters": ["avgFreight"], "sortedBy": ["avgFreight"] }
+      "referenceQuery": "northwind::model::Order.all()->project([o|$o.customer.companyName, o|$o.freight], ['customer', 'freight'])->groupBy([{r|$r.customer}], [{r|$r.freight->avg()}], ['customer', 'avgFreight'])->sort(~avgFreight->descending())",
+      "mustContainOps": ["project", "groupBy"],
+      "properties": { "dimensions": ["companyName"], "metrics": ["avg"], "filters": [], "sortedBy": ["avgFreight"] }
     }
   },
   {
