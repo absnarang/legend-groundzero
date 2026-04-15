@@ -121,26 +121,68 @@ def score_answer_accuracy(
     engine_url: str,
 ) -> float:
     """
-    Execute both reference and generated queries via POST /engine/execute.
+    Compile Pure→SQL via /engine/plan, then execute via /engine/sql
+    (which shares the seeded in-memory DB connection).
     Compare: (a) column name overlap, (b) row count ratio.
     Returns 0.0-1.0.
     """
-    def execute(query: str) -> Optional[dict]:
+    def _extract_runtime(src: str) -> Optional[str]:
+        m = re.search(r'Runtime\s+([\w:]+)', src)
+        return m.group(1) if m else None
+
+    def compile_and_execute(query: str) -> Optional[dict]:
+        # Step 1: Compile Pure → SQL via /engine/plan
         full_code = model_src.strip() + "\n\n" + query.strip()
-        payload = json.dumps({"code": full_code}).encode("utf-8")
-        req = urllib.request.Request(
-            f"{engine_url}/engine/execute",
-            data=payload,
+        plan_payload = json.dumps({"code": full_code}).encode("utf-8")
+        plan_req = urllib.request.Request(
+            f"{engine_url}/engine/plan",
+            data=plan_payload,
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read())
+            with urllib.request.urlopen(plan_req, timeout=30) as resp:
+                plan_result = json.loads(resp.read())
         except Exception:
             return None
 
-    ref_result = execute(ref_query)
-    gen_result = execute(gen_query)
+        if not plan_result.get("success"):
+            return None
+
+        sql = plan_result.get("sql", "")
+        if not sql:
+            return None
+
+        # Step 2: Execute SQL via /engine/sql (shares seeded connection)
+        runtime_name = _extract_runtime(model_src)
+        if not runtime_name:
+            return None
+
+        sql_payload = json.dumps({
+            "code": model_src,
+            "sql": sql,
+            "runtime": runtime_name,
+        }).encode("utf-8")
+        sql_req = urllib.request.Request(
+            f"{engine_url}/engine/sql",
+            data=sql_payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(sql_req, timeout=30) as resp:
+                result = json.loads(resp.read())
+        except Exception:
+            return None
+
+        if not result.get("success"):
+            return None
+
+        # Normalize to common format
+        columns = result.get("columns", [])
+        data = json.loads(result.get("data", "[]")) if result.get("data") else []
+        return {"success": True, "columns": columns, "rowCount": len(data)}
+
+    ref_result = compile_and_execute(ref_query)
+    gen_result = compile_and_execute(gen_query)
 
     if not ref_result or not ref_result.get("success"):
         return 0.0

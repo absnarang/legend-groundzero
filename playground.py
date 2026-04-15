@@ -1200,6 +1200,29 @@ with tab_eval:
             # For "All", we need to run each case with its own model
             eval_model_src = None
 
+        # Auto-seed databases so answer accuracy can execute queries
+        seed_status = st.empty()
+        seed_status.info("Seeding databases for answer accuracy scoring...")
+        _seed_ok = True
+        if eval_domain in ("Northwind", "All"):
+            r = post_json(f"{ENGINE_URL}/engine/sql", {
+                "code": NORTHWIND_MODEL, "sql": NORTHWIND_SEED_SQL,
+                "runtime": "northwind::runtime::NorthwindRuntime",
+            })
+            if not r.get("success"):
+                seed_status.warning(f"Northwind seed failed: {r.get('error', 'unknown')}")
+                _seed_ok = False
+        if eval_domain in ("ETF", "All"):
+            r = post_json(f"{ENGINE_URL}/engine/sql", {
+                "code": ETF_MODEL, "sql": ETF_SEED_SQL,
+                "runtime": "etf::EtfRuntime",
+            })
+            if not r.get("success"):
+                seed_status.warning(f"ETF seed failed: {r.get('error', 'unknown')}")
+                _seed_ok = False
+        if _seed_ok:
+            seed_status.success("Databases seeded successfully.")
+
         progress_bar = st.progress(0, text="Starting eval...")
 
         def update_progress(i, total, case_id):
@@ -1284,6 +1307,101 @@ with tab_eval:
                         help="Percentage of cases where the NLQ pipeline returned a valid Pure query "
                              "without errors.")
         cnt_col.metric("Cases Evaluated", eval_stats["count"])
+
+        # ── Explain section — diagnostic commentary ──────────────────────────
+        with st.expander("📖 Explain these metrics", expanded=False):
+            _s = eval_stats
+
+            # --- Overall Score ---
+            overall = _s["avg_overall_score"]
+            if overall >= 0.90:
+                st.success(f"**Overall Score ({overall:.2f}):** Excellent — the NLQ pipeline is performing well across all dimensions.")
+            elif overall >= 0.75:
+                st.info(f"**Overall Score ({overall:.2f}):** Good, but room for improvement. Check the weaker metrics below for specific guidance.")
+            else:
+                st.warning(f"**Overall Score ({overall:.2f}):** Needs attention. One or more metrics are dragging down the composite score significantly.")
+            st.caption("Weighted composite: Recall (15%) + Precision (5%) + Answer Accuracy (20%) + Ops Coverage (10%) + Completeness (10%) + Faithfulness (10%) + Relevance (10%) + Fidelity (20%)")
+
+            st.markdown("---")
+
+            # --- Recall ---
+            recall = _s["avg_recall"]
+            if recall >= 0.95:
+                st.markdown(f"**Recall ({recall:.2f}):** All required classes are being retrieved. No action needed.")
+            elif recall >= 0.80:
+                st.markdown(f"**Recall ({recall:.2f}):** Most classes retrieved, but some are being missed. Consider adding more synonyms/descriptions to NlqProfile annotations or increasing association expansion hops.")
+            else:
+                st.markdown(f"**Recall ({recall:.2f}):** Many required classes are not being retrieved. Check that the semantic index has sufficient NlqProfile annotations (descriptions, synonyms, exampleQuestions) for the missing classes.")
+
+            # --- Precision ---
+            precision = _s["avg_precision"]
+            if precision >= 0.70:
+                st.markdown(f"**Precision ({precision:.2f}):** Retrieved class set is well-targeted.")
+            elif precision >= 0.40:
+                st.markdown(f"**Precision ({precision:.2f}):** Extra classes are being retrieved beyond what's needed. This is a known side effect of association expansion (1-hop neighbors get pulled in). Only 5% weight — acceptable tradeoff for high recall. To improve: make expansion conditional or reduce hops.")
+            else:
+                st.markdown(f"**Precision ({precision:.2f}):** Significant over-retrieval. The semantic index is returning many irrelevant classes, which adds noise to the LLM context.")
+
+            # --- Answer Accuracy ---
+            ans_acc = _s["avg_answer_accuracy"]
+            # Count cases with 0.0 answer accuracy
+            zero_acc_cases = [r for r in eval_results if r.answer_accuracy == 0.0 and r.success]
+            low_acc_cases = [r for r in eval_results if 0.0 < r.answer_accuracy < 0.5 and r.success]
+            if ans_acc >= 0.90:
+                st.markdown(f"**Answer Accuracy ({ans_acc:.2f}):** Excellent — generated queries produce results very close to the reference.")
+            elif ans_acc >= 0.70:
+                reasons = []
+                if zero_acc_cases:
+                    zero_ids = ", ".join(r.case_id for r in zero_acc_cases[:5])
+                    reasons.append(f"**{len(zero_acc_cases)} case(s) scored 0.0** (query execution failed — likely Pure syntax errors): {zero_ids}")
+                if low_acc_cases:
+                    low_ids = ", ".join(r.case_id for r in low_acc_cases[:5])
+                    reasons.append(f"**{len(low_acc_cases)} case(s) scored below 0.5** (column alias mismatches or different row counts): {low_ids}")
+                st.markdown(f"**Answer Accuracy ({ans_acc:.2f}):** Good but not great. This metric executes both generated and reference queries, then compares column names (60%) and row counts (40%).")
+                if reasons:
+                    st.markdown("Improvement opportunities:")
+                    for r in reasons:
+                        st.markdown(f"- {r}")
+                st.markdown("Common causes: wrong sort syntax (`descending('col')` vs `~col->descending()`), column alias mismatches (`productName` vs `product`), filter placement errors (post-project filter on non-projected column).")
+            else:
+                st.markdown(f"**Answer Accuracy ({ans_acc:.2f}):** Low — many generated queries fail to execute or produce very different results than reference. Check that the database is seeded and that Pure syntax in the system prompt matches the engine's parser.")
+                if zero_acc_cases:
+                    zero_ids = ", ".join(r.case_id for r in zero_acc_cases[:8])
+                    st.markdown(f"- Cases with 0.0 (execution failures): {zero_ids}")
+
+            # --- Completeness ---
+            comp = _s["avg_completeness"]
+            if comp >= 4.5:
+                st.markdown(f"**Completeness ({comp:.1f}/5):** The LLM captures nearly all requested data elements and operations.")
+            elif comp >= 3.5:
+                st.markdown(f"**Completeness ({comp:.1f}/5):** Some requested columns or operations are being omitted. Common issue: LLM projects fewer columns than the question implies. Adding more exampleQuestions to NlqProfile can help.")
+            else:
+                st.markdown(f"**Completeness ({comp:.1f}/5):** Significant elements are missing from generated queries. Review system prompt examples and ensure they demonstrate the expected level of detail.")
+
+            # --- Faithfulness ---
+            faith = _s["avg_faithfulness"]
+            if faith >= 4.5:
+                st.markdown(f"**Faithfulness ({faith:.1f}/5):** Queries are logically accurate with correct filters, classes, and operations.")
+            elif faith >= 3.5:
+                st.markdown(f"**Faithfulness ({faith:.1f}/5):** Minor logical errors in some queries — wrong filter values, incorrect root class, or misapplied operations. Check ROOT CLASS SELECTION rules in system prompt.")
+            else:
+                st.markdown(f"**Faithfulness ({faith:.1f}/5):** Frequent logical errors. The LLM may be hallucinating operations or using wrong classes.")
+
+            # --- Relevance ---
+            rel = _s["avg_relevance"]
+            if rel >= 4.5:
+                st.markdown(f"**Relevance ({rel:.1f}/5):** Generated queries consistently answer the user's question.")
+            else:
+                st.markdown(f"**Relevance ({rel:.1f}/5):** Some queries don't address the actual question. This suggests the LLM is misinterpreting the intent.")
+
+            # --- Fidelity ---
+            fid = _s["avg_fidelity"]
+            if fid <= 3.2:
+                st.markdown(f"**Fidelity ({fid:.1f}/5):** Most cases don't require derived attributes (scored 3 = N/A). This metric only activates when questions need computed values like 'full name' from firstName+lastName or 'line total' from price*qty. To get a meaningful score, add eval cases with derived attribute requirements.")
+            elif fid >= 4.0:
+                st.markdown(f"**Fidelity ({fid:.1f}/5):** Good — derived attributes are being correctly synthesized from available properties.")
+            else:
+                st.markdown(f"**Fidelity ({fid:.1f}/5):** Some derived attributes are not being computed correctly. Check that the system prompt demonstrates how to combine properties in project lambdas.")
 
         # Per-domain breakdown
         by_diff = eval_stats.get("by_difficulty", {})
