@@ -12,6 +12,13 @@ ENGINE_URL = "http://localhost:8080"
 
 NORTHWIND_MODEL = """\
 // ── NLQ Profile ────────────────────────────────────────────────────────────
+// Stereotypes classify each class by its role in the model:
+//   core      — primary domain entity (Product, Order, Customer, OrderDetail)
+//   junction  — bridge / line-item class that joins two core entities (OrderDetail)
+//   timeseries — historical snapshots over time
+//   calculated — derived from other classes
+//   sensitive  — contains PII / confidential data
+// Tags provide NLQ-friendly metadata for each class and property.
 
 Profile nlq::NlqProfile
 {
@@ -19,100 +26,194 @@ Profile nlq::NlqProfile
     tags: [description, synonyms, businessDomain, importance, exampleQuestions, sampleValues, unit, whenToUse];
 }
 
+// ── Enumerations ──────────────────────────────────────────────────────────
+// Enums document the known domain values. The underlying columns are stored as
+// String/Integer (the enums are for NLQ documentation and validation hints).
+
+Enum northwind::model::CategoryName
+{
+    BEVERAGES,    // Soft drinks, coffees, teas, beers, and ales
+    CONDIMENTS,   // Sweet/savoury sauces, relishes, spreads, and seasonings
+    SEAFOOD,      // Seaweed and fish
+    DAIRY,        // Cheeses and dairy products
+    GRAINS,       // Breads, crackers, pasta, and cereal
+    MEAT,         // Prepared meats and poultry
+    PRODUCE,      // Dried fruit and bean curd
+    CONFECTIONS   // Desserts, candies, and sweet breads
+}
+
+Enum northwind::model::EmployeeTitle
+{
+    SALES_REPRESENTATIVE,     // Front-line sales staff
+    SALES_MANAGER,            // Manages a sales team
+    VICE_PRESIDENT_SALES,     // Senior sales leadership
+    INSIDE_SALES_COORDINATOR  // Office-based sales support
+}
+
+Enum northwind::model::DiscontinuedFlag
+{
+    ACTIVE,       // 0 — product is currently sold
+    DISCONTINUED  // 1 — product is no longer sold
+}
+
 // ── Domain classes ─────────────────────────────────────────────────────────
 
-Class {nlq::NlqProfile.description = 'A product category or grouping',
-       nlq::NlqProfile.synonyms = 'category, group, type, product category',
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A product category or grouping in the catalog (e.g. Beverages, Seafood)',
+       nlq::NlqProfile.synonyms = 'category, group, type, product category, product group, department',
        nlq::NlqProfile.businessDomain = 'Product Catalog',
-       nlq::NlqProfile.importance = 'medium'} northwind::model::Category
+       nlq::NlqProfile.importance = 'medium',
+       nlq::NlqProfile.sampleValues = 'categoryName: Beverages, Condiments, Seafood, Dairy, Grains, Meat, Produce, Confections',
+       nlq::NlqProfile.whenToUse = 'Use Category for questions about product categorization, grouping products, or listing the catalog taxonomy. Usually navigated from Product via the Product_Category association.',
+       nlq::NlqProfile.exampleQuestions = 'List all categories|Show products in the Beverages category|How many products per category?|Which category has the most products?'} northwind::model::Category
 {
+    {nlq::NlqProfile.description = 'Primary key — category identifier', nlq::NlqProfile.sampleValues = '1, 2, 3, 4, 5, 6, 7, 8'}
     categoryId:   Integer[1];
+    {nlq::NlqProfile.description = 'Human-readable category name; stored matching the CategoryName enum (in title case)', nlq::NlqProfile.sampleValues = 'Beverages, Condiments, Seafood, Dairy, Grains, Meat, Produce, Confections'}
     categoryName: String[1];
+    {nlq::NlqProfile.description = 'Free-text description of the category', nlq::NlqProfile.sampleValues = 'Soft drinks, coffees, teas, beers, and ales'}
     description:  String[0..1];
 }
 
-Class {nlq::NlqProfile.description = 'A product supplier or vendor',
-       nlq::NlqProfile.synonyms = 'supplier, vendor, manufacturer',
-       nlq::NlqProfile.businessDomain = 'Product Catalog',
-       nlq::NlqProfile.importance = 'low'} northwind::model::Supplier
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'A product supplier / vendor who provides goods to the catalog',
+       nlq::NlqProfile.synonyms = 'supplier, vendor, manufacturer, provider, source',
+       nlq::NlqProfile.businessDomain = 'Product Catalog, Procurement',
+       nlq::NlqProfile.importance = 'low',
+       nlq::NlqProfile.sampleValues = 'companyName: Exotic Liquids, Tokyo Traders, Cooperativa de Quesos; country: UK, USA, Japan, Spain; city: London, Tokyo, Oviedo',
+       nlq::NlqProfile.whenToUse = 'Use Supplier for questions about sourcing, vendor geography, or which suppliers provide which products. Navigate from Product via Product_Supplier.',
+       nlq::NlqProfile.exampleQuestions = 'List all suppliers|Which suppliers are in the UK?|How many products per supplier?|Show suppliers grouped by country'} northwind::model::Supplier
 {
+    {nlq::NlqProfile.description = 'Primary key — supplier identifier', nlq::NlqProfile.sampleValues = '1, 2, 3, 4, 5'}
     supplierId:  Integer[1];
+    {nlq::NlqProfile.description = 'Supplier company name', nlq::NlqProfile.sampleValues = 'Exotic Liquids, Tokyo Traders, Cooperativa de Quesos'}
     companyName: String[1];
+    {nlq::NlqProfile.description = 'Country where the supplier is based', nlq::NlqProfile.sampleValues = 'UK, USA, Japan, Spain'}
     country:     String[0..1];
+    {nlq::NlqProfile.description = 'City where the supplier is based', nlq::NlqProfile.sampleValues = 'London, New Orleans, Tokyo, Oviedo'}
     city:        String[0..1];
 }
 
 Class <<nlq::NlqProfile.core>>
-      {nlq::NlqProfile.description = 'A product in the catalog with unit price and stock info',
-       nlq::NlqProfile.synonyms = 'product, item, goods, merchandise',
+      {nlq::NlqProfile.description = 'A product in the catalog with its list price, stock level, and active / discontinued status',
+       nlq::NlqProfile.synonyms = 'product, item, goods, merchandise, sku, article, catalog item',
        nlq::NlqProfile.businessDomain = 'Product Catalog',
        nlq::NlqProfile.importance = 'high',
+       nlq::NlqProfile.sampleValues = 'productName: Chai, Chang, Aniseed Syrup, Queso Cabrales; unitPrice: 6.00 to 97.00 USD; unitsInStock: 0 to 86; discontinued: 0 (active) or 1 (discontinued)',
+       nlq::NlqProfile.unit = 'unitPrice: USD per unit; unitsInStock: whole units; discontinued: boolean flag (0/1)',
        nlq::NlqProfile.whenToUse = 'Use Product as root class for questions about catalog prices, categories, suppliers, or stock levels. Product.unitPrice is the catalog list price; OrderDetail.unitPrice is the per-order transaction price.',
-       nlq::NlqProfile.exampleQuestions = 'What is the average unit price per category?|List products sorted by price|Which products are discontinued?'} northwind::model::Product
+       nlq::NlqProfile.exampleQuestions = 'What is the average unit price per category?|List products sorted by price|Which products are discontinued?|Show products priced above 30 USD|How many products are out of stock?'} northwind::model::Product
+[
+    positiveUnitPrice:   $this.unitPrice > 0,
+    nonNegativeStock:    $this.unitsInStock >= 0,
+    validDiscontinued:   $this.discontinued == 0 || $this.discontinued == 1
+]
 {
+    {nlq::NlqProfile.description = 'Primary key — product identifier', nlq::NlqProfile.sampleValues = '1, 2, 3, ..., 15'}
     productId:    Integer[1];
+    {nlq::NlqProfile.description = 'Product display name', nlq::NlqProfile.sampleValues = 'Chai, Chang, Aniseed Syrup, Tofu, Pavlova'}
     productName:  String[1];
+    {nlq::NlqProfile.description = 'Catalog list price per unit (USD). Not to be confused with OrderDetail.unitPrice which is the per-order transaction price', nlq::NlqProfile.sampleValues = '6.00, 10.00, 17.45, 23.25, 97.00', nlq::NlqProfile.unit = 'USD'}
     unitPrice:    Float[1];
+    {nlq::NlqProfile.description = 'Current stock level — whole units available for sale', nlq::NlqProfile.sampleValues = '0, 13, 29, 86', nlq::NlqProfile.unit = 'units'}
     unitsInStock: Integer[1];
+    {nlq::NlqProfile.description = 'Discontinued flag — 0 (ACTIVE) means currently sold, 1 (DISCONTINUED) means retired from catalog', nlq::NlqProfile.sampleValues = '0, 1'}
     discontinued: Integer[1];
 }
 
 Class <<nlq::NlqProfile.core>>
-      {nlq::NlqProfile.description = 'A customer who places orders',
-       nlq::NlqProfile.synonyms = 'customer, client, buyer, account',
-       nlq::NlqProfile.businessDomain = 'Sales',
+      {nlq::NlqProfile.description = 'A business customer who places orders',
+       nlq::NlqProfile.synonyms = 'customer, client, buyer, account, purchaser, company',
+       nlq::NlqProfile.businessDomain = 'Sales, CRM',
        nlq::NlqProfile.importance = 'high',
-       nlq::NlqProfile.exampleQuestions = 'How many orders does each customer have?|List customers from Germany'} northwind::model::Customer
+       nlq::NlqProfile.sampleValues = 'customerId: ALFKI, ANATR, BERGS; companyName: Alfreds Futterkiste, Around the Horn; country: Germany, USA, UK, France, Mexico',
+       nlq::NlqProfile.whenToUse = 'Use Customer as root class for questions about who is buying (demographics), where customers are located, or aggregate stats per customer. Navigate to Order via Order_Customer.',
+       nlq::NlqProfile.exampleQuestions = 'How many orders does each customer have?|List customers from Germany|Which customers have ordered seafood?|Show top 5 customers by total order freight'} northwind::model::Customer
 {
+    {nlq::NlqProfile.description = 'Primary key — 5-letter customer code', nlq::NlqProfile.sampleValues = 'ALFKI, ANATR, ANTON, AROUT, BERGS, BONAP'}
     customerId:  String[1];
+    {nlq::NlqProfile.description = 'Customer company name', nlq::NlqProfile.sampleValues = 'Alfreds Futterkiste, Ana Trujillo Emparedados, Around the Horn'}
     companyName: String[1];
+    {nlq::NlqProfile.description = 'Primary contact person at the customer', nlq::NlqProfile.sampleValues = 'Maria Anders, Thomas Hardy, Victoria Ashworth'}
     contactName: String[0..1];
+    {nlq::NlqProfile.description = 'Customer city', nlq::NlqProfile.sampleValues = 'Berlin, London, Mexico City, Lulea, Marseille, Buenos Aires'}
     city:        String[0..1];
+    {nlq::NlqProfile.description = 'Customer country', nlq::NlqProfile.sampleValues = 'Germany, Mexico, UK, Sweden, Spain, France, Canada, Argentina'}
     country:     String[0..1];
 }
 
-Class {nlq::NlqProfile.description = 'An employee who processes orders',
-       nlq::NlqProfile.synonyms = 'employee, staff, rep, sales rep',
-       nlq::NlqProfile.businessDomain = 'Sales',
-       nlq::NlqProfile.importance = 'medium'} northwind::model::Employee
+Class <<nlq::NlqProfile.core>>
+      {nlq::NlqProfile.description = 'An internal employee who processes and owns customer orders',
+       nlq::NlqProfile.synonyms = 'employee, staff, rep, sales rep, salesperson, account manager',
+       nlq::NlqProfile.businessDomain = 'Sales, HR',
+       nlq::NlqProfile.importance = 'medium',
+       nlq::NlqProfile.sampleValues = 'firstName: Nancy, Andrew, Janet; lastName: Davolio, Fuller, Leverling; title: Sales Representative, Sales Manager, Vice President Sales; country: USA, UK',
+       nlq::NlqProfile.whenToUse = 'Use Employee for questions about the sales team — who handled what, employee tenure, performance comparisons across reps. Navigate to Order via Order_Employee.',
+       nlq::NlqProfile.exampleQuestions = 'List all Sales Representatives|How many orders did each employee process?|Which employee had the highest total freight?|Show employees hired in 1993'} northwind::model::Employee
 {
+    {nlq::NlqProfile.description = 'Primary key — employee identifier', nlq::NlqProfile.sampleValues = '1, 2, 3, ..., 9'}
     employeeId: Integer[1];
+    {nlq::NlqProfile.description = 'Employee first / given name', nlq::NlqProfile.sampleValues = 'Nancy, Andrew, Janet, Margaret, Steven'}
     firstName:  String[1];
+    {nlq::NlqProfile.description = 'Employee last / family name', nlq::NlqProfile.sampleValues = 'Davolio, Fuller, Leverling, Peacock'}
     lastName:   String[1];
+    {nlq::NlqProfile.description = 'Job title — maps to EmployeeTitle enum (stored as free text in original case)', nlq::NlqProfile.sampleValues = 'Sales Representative, Sales Manager, Vice President Sales, Inside Sales Coord.'}
     title:      String[0..1];
+    {nlq::NlqProfile.description = 'Employee home city', nlq::NlqProfile.sampleValues = 'Seattle, Tacoma, Kirkland, Redmond, London'}
     city:       String[0..1];
+    {nlq::NlqProfile.description = 'Employee home country', nlq::NlqProfile.sampleValues = 'USA, UK'}
     country:    String[0..1];
+    {nlq::NlqProfile.description = 'Hire date — ISO-8601 (YYYY-MM-DD)', nlq::NlqProfile.sampleValues = '1992-05-01, 1992-08-14, 1993-05-03, 1994-11-15'}
     hireDate:   String[0..1];
 }
 
 Class <<nlq::NlqProfile.core>>
-      {nlq::NlqProfile.description = 'A customer order header with date and shipping info',
-       nlq::NlqProfile.synonyms = 'order, purchase, sale, transaction',
-       nlq::NlqProfile.businessDomain = 'Sales',
+      {nlq::NlqProfile.description = 'A customer order header — one record per order with date, freight, and shipping info. Line-item detail lives in OrderDetail.',
+       nlq::NlqProfile.synonyms = 'order, purchase, sale, transaction, sales order, shipment',
+       nlq::NlqProfile.businessDomain = 'Sales, Order Management',
        nlq::NlqProfile.importance = 'high',
-       nlq::NlqProfile.exampleQuestions = 'Show orders from Germany|List orders by freight|How many orders per country?'} northwind::model::Order
+       nlq::NlqProfile.sampleValues = 'orderId: 10248, 10249, ...; orderDate: 1996-07-04; freight: 3.05 to 148.33 USD; shipCountry: Germany, UK, France, Mexico',
+       nlq::NlqProfile.unit = 'freight: USD; orderDate: ISO-8601 date string',
+       nlq::NlqProfile.whenToUse = 'Use Order as root class for questions about orders themselves — count per period, freight costs, shipping destinations. Use OrderDetail (not Order) when asking about products inside orders.',
+       nlq::NlqProfile.exampleQuestions = 'Show orders from Germany|List orders by freight descending|How many orders per country?|What is the average freight per shipCountry?|Show orders from July 1996'} northwind::model::Order
 {
+    {nlq::NlqProfile.description = 'Primary key — order identifier', nlq::NlqProfile.sampleValues = '10248, 10249, 10250, 10251'}
     orderId:     Integer[1];
+    {nlq::NlqProfile.description = 'Date the order was placed — ISO-8601 (YYYY-MM-DD)', nlq::NlqProfile.sampleValues = '1996-07-04, 1996-07-17, 1996-07-22'}
     orderDate:   String[0..1];
+    {nlq::NlqProfile.description = 'Shipping / freight cost for this order', nlq::NlqProfile.sampleValues = '3.05, 32.38, 65.83, 148.33', nlq::NlqProfile.unit = 'USD'}
     freight:     Float[0..1];
+    {nlq::NlqProfile.description = 'Destination country where the order was shipped', nlq::NlqProfile.sampleValues = 'Germany, Mexico, UK, Sweden, Spain, France, Canada, Argentina'}
     shipCountry: String[0..1];
+    {nlq::NlqProfile.description = 'Destination city where the order was shipped', nlq::NlqProfile.sampleValues = 'Berlin, Mexico City, London, Lulea, Madrid, Marseille'}
     shipCity:    String[0..1];
 }
 
-Class <<nlq::NlqProfile.core>>
-      {nlq::NlqProfile.description = 'A line item within an order — one row per product per order',
-       nlq::NlqProfile.synonyms = 'order detail, line item, order line, order item',
-       nlq::NlqProfile.businessDomain = 'Sales',
+Class <<nlq::NlqProfile.junction>>
+      {nlq::NlqProfile.description = 'A line item within an order — one row per product per order. Bridges Order and Product with quantity, transaction unit price, and discount.',
+       nlq::NlqProfile.synonyms = 'order detail, line item, order line, order item, sale line, invoice line',
+       nlq::NlqProfile.businessDomain = 'Sales, Order Management',
        nlq::NlqProfile.importance = 'high',
-       nlq::NlqProfile.whenToUse = 'Use OrderDetail as root class when the question asks about products within orders, order lines, or needs to show per-product detail for orders. Start from OrderDetail and navigate to Order and Product.',
-       nlq::NlqProfile.exampleQuestions = 'Show each order with product names from its order details|What are the quantities per order?|List order lines with product info'} northwind::model::OrderDetail
+       nlq::NlqProfile.sampleValues = 'unitPrice: 6.00 to 97.00 USD; quantity: 5 to 50 units; discount: 0.0, 0.05, 0.15, 0.20, 0.25 (fractions)',
+       nlq::NlqProfile.unit = 'unitPrice: USD per unit; quantity: whole units; discount: decimal fraction (0.15 = 15%)',
+       nlq::NlqProfile.whenToUse = 'Use OrderDetail as root class when the question asks about products within orders, order lines, line-level revenue / quantity, or needs to show per-product detail for orders. Start from OrderDetail and navigate to Order and Product.',
+       nlq::NlqProfile.exampleQuestions = 'Show each order with product names from its order details|What are the quantities per order?|Which products have discounts above 10 percent?|Compute line revenue as unitPrice * quantity * (1 - discount)|List order lines with product info'} northwind::model::OrderDetail
+[
+    positiveUnitPrice: $this.unitPrice > 0,
+    positiveQuantity:  $this.quantity > 0,
+    validDiscount:     $this.discount >= 0 && $this.discount <= 1
+]
 {
+    {nlq::NlqProfile.description = 'Transaction unit price at the time of sale — may differ from Product.unitPrice (catalog list price)', nlq::NlqProfile.sampleValues = '6.00, 18.00, 25.00, 97.00', nlq::NlqProfile.unit = 'USD per unit'}
     unitPrice: Float[1];
+    {nlq::NlqProfile.description = 'Number of units purchased on this line', nlq::NlqProfile.sampleValues = '5, 10, 12, 25, 40, 50', nlq::NlqProfile.unit = 'units'}
     quantity:  Integer[1];
+    {nlq::NlqProfile.description = 'Discount applied as a decimal fraction — 0.0 means no discount, 0.25 means 25 percent off', nlq::NlqProfile.sampleValues = '0.0, 0.05, 0.15, 0.20, 0.25', nlq::NlqProfile.unit = 'decimal fraction'}
     discount:  Float[1];
 }
 
 // ── Associations ────────────────────────────────────────────────────────────
+// Each Product belongs to exactly one Category; a Category has many Products.
 
 Association northwind::assoc::Product_Category
 {
@@ -120,30 +221,35 @@ Association northwind::assoc::Product_Category
     products: northwind::model::Product[*];
 }
 
+// Each Product has at most one Supplier; a Supplier may supply many Products.
 Association northwind::assoc::Product_Supplier
 {
     supplier: northwind::model::Supplier[0..1];
     products: northwind::model::Product[*];
 }
 
+// Each Order is placed by exactly one Customer; a Customer may have many Orders.
 Association northwind::assoc::Order_Customer
 {
     customer: northwind::model::Customer[1];
     orders:   northwind::model::Order[*];
 }
 
+// Each Order is processed by at most one Employee; an Employee processes many Orders.
 Association northwind::assoc::Order_Employee
 {
     employee: northwind::model::Employee[0..1];
     orders:   northwind::model::Order[*];
 }
 
+// Each Order has many OrderDetail line items; each OrderDetail belongs to exactly one Order.
 Association northwind::assoc::Order_OrderDetail
 {
     orderDetails: northwind::model::OrderDetail[*];
     order:        northwind::model::Order[1];
 }
 
+// Each OrderDetail references exactly one Product; a Product may appear in many OrderDetails.
 Association northwind::assoc::OrderDetail_Product
 {
     product:      northwind::model::Product[1];
