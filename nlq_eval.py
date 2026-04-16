@@ -7,7 +7,6 @@ Measures quality of the NLQ pipeline (POST /engine/nlq) across dimensions:
   - Operation coverage (filter, project, sort, etc.)
   - Answer accuracy (column overlap + row count comparison)
   - LLM-as-judge (completeness, faithfulness, relevance)
-  - Fidelity (weighted composite score)
 """
 
 from __future__ import annotations
@@ -46,7 +45,7 @@ class EvalResult:
     judge_completeness: float = 0.0
     judge_faithfulness: float = 0.0
     judge_relevance: float = 0.0
-    judge_fidelity: float = 0.0
+    judge_fidelity: float = 0.0  # Reserved for future use
     overall_score: float = 0.0
     generated_query: str = ""
     latency_ms: int = 0
@@ -224,10 +223,10 @@ def llm_judge(
     gen_query: str,
     api_key: str,
     model: str = "claude-sonnet-4-6",
-) -> tuple[float, float, float, float, str]:
+) -> tuple[float, float, float, str]:
     """
     Use Claude as a judge to score the generated query vs reference.
-    Returns (completeness, faithfulness, relevance, fidelity, rationale).
+    Returns (completeness, faithfulness, relevance, rationale).
     Scores are 1-5.
     """
     judge_prompt = f"""You are evaluating the quality of a generated Pure query against a reference query for a natural language question.
@@ -240,7 +239,7 @@ Reference Query:
 Generated Query:
 {gen_query}
 
-Score the generated query on four dimensions (1-5 scale each):
+Score the generated query on three dimensions (1-5 scale each):
 
 1. **Completeness** (1-5): Does the generated query capture all the data elements and operations requested in the question? 5 = perfectly complete, 1 = missing most elements.
 
@@ -248,10 +247,8 @@ Score the generated query on four dimensions (1-5 scale each):
 
 3. **Relevance** (1-5): Does the generated query return data that would actually answer the user's question? 5 = perfectly relevant results, 1 = irrelevant results.
 
-4. **Fidelity** (1-5): When the question requires derived or computed attributes that don't exist directly on the model (e.g. "full name" from firstName+lastName, "line total" from unitPrice*quantity, "price per unit" from marketValue/shares), does the generated query correctly compose them from available properties using appropriate operations (concatenation, arithmetic, string functions)? Or does it hallucinate a non-existent property? Score 5 if all derived attributes are correctly synthesized, 3 if the question doesn't require any derived attributes (N/A), 1 if the query references non-existent fields instead of computing them.
-
 Return your response as JSON only, no markdown:
-{{"completeness": <int>, "faithfulness": <int>, "relevance": <int>, "fidelity": <int>, "rationale": "<brief explanation>"}}"""
+{{"completeness": <int>, "faithfulness": <int>, "relevance": <int>, "rationale": "<brief explanation>"}}"""
 
     try:
         import anthropic
@@ -270,34 +267,31 @@ Return your response as JSON only, no markdown:
             float(result.get("completeness", 3)),
             float(result.get("faithfulness", 3)),
             float(result.get("relevance", 3)),
-            float(result.get("fidelity", 3)),
             result.get("rationale", ""),
         )
     except Exception as e:
-        return 3.0, 3.0, 3.0, 3.0, f"Judge error: {e}"
+        return 3.0, 3.0, 3.0, f"Judge error: {e}"
 
 
 def compute_overall_score(result: EvalResult) -> float:
     """
     Weighted composite overall score:
-      0.15 * recall
+      0.20 * recall
     + 0.05 * precision
-    + 0.20 * answer_accuracy
+    + 0.25 * answer_accuracy
     + 0.10 * ops_coverage
-    + 0.10 * (completeness / 5)
+    + 0.15 * (completeness / 5)
     + 0.10 * (faithfulness / 5)
-    + 0.10 * (relevance / 5)
-    + 0.20 * (fidelity / 5)
+    + 0.15 * (relevance / 5)
     """
     return (
-        0.15 * result.retrieval_recall
+        0.20 * result.retrieval_recall
         + 0.05 * result.retrieval_precision
-        + 0.20 * result.answer_accuracy
+        + 0.25 * result.answer_accuracy
         + 0.10 * result.ops_coverage
-        + 0.10 * (result.judge_completeness / 5.0)
+        + 0.15 * (result.judge_completeness / 5.0)
         + 0.10 * (result.judge_faithfulness / 5.0)
-        + 0.10 * (result.judge_relevance / 5.0)
-        + 0.20 * (result.judge_fidelity / 5.0)
+        + 0.15 * (result.judge_relevance / 5.0)
     )
 
 
@@ -408,20 +402,18 @@ def run_eval(
 
         # LLM judge (only if API key is provided)
         if api_key and ref_query and gen_query:
-            comp, faith, rel, fid, rationale = llm_judge(
+            comp, faith, rel, rationale = llm_judge(
                 case.question, ref_query, gen_query, api_key
             )
             result.judge_completeness = comp
             result.judge_faithfulness = faith
             result.judge_relevance = rel
-            result.judge_fidelity = fid
             result.judge_rationale = rationale
         else:
             # Default to neutral scores when no judge is available
             result.judge_completeness = 3.0
             result.judge_faithfulness = 3.0
             result.judge_relevance = 3.0
-            result.judge_fidelity = 3.0
             result.judge_rationale = "No API key provided; using default scores"
 
         # Overall score
@@ -448,7 +440,6 @@ def summary_stats(results: list[EvalResult]) -> dict:
             "avg_completeness": 0.0,
             "avg_faithfulness": 0.0,
             "avg_relevance": 0.0,
-            "avg_fidelity": 0.0,
             "pass_rate": 0.0,
             "success_rate": 0.0,
             "by_difficulty": {},
@@ -466,7 +457,6 @@ def summary_stats(results: list[EvalResult]) -> dict:
         "avg_completeness": sum(r.judge_completeness for r in results) / n,
         "avg_faithfulness": sum(r.judge_faithfulness for r in results) / n,
         "avg_relevance": sum(r.judge_relevance for r in results) / n,
-        "avg_fidelity": sum(r.judge_fidelity for r in results) / n,
         "pass_rate": sum(1 for r in results if r.overall_score > 0.6) / n,
         "success_rate": len(successful) / n,
     }

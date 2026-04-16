@@ -1175,7 +1175,7 @@ with tab_eval:
             type="password",
             key="eval_api_key",
             value=os.getenv("ANTHROPIC_API_KEY", ""),
-            help="Auto-loaded from .env if available. Claude Sonnet will score completeness/faithfulness/relevance/fidelity.",
+            help="Auto-loaded from .env if available. Claude Sonnet will score completeness/faithfulness/relevance.",
         )
 
     btn_eval = st.button("🚀 Run Eval", type="primary", key="eval_run_btn")
@@ -1269,9 +1269,9 @@ with tab_eval:
         st.markdown("### Summary Metrics")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Overall Score", f"{eval_stats['avg_overall_score']:.2f}",
-                  help="Weighted composite (0-1). Combines recall (15%), precision (5%), "
-                       "answer accuracy (20%), ops coverage (10%), completeness (10%), "
-                       "faithfulness (10%), relevance (10%), and fidelity (20%).")
+                  help="Weighted composite (0-1). Combines recall (20%), precision (5%), "
+                       "answer accuracy (25%), ops coverage (10%), completeness (15%), "
+                       "faithfulness (10%), relevance (15%).")
         m2.metric("Recall", f"{eval_stats['avg_recall']:.2f}",
                   help="Retrieval recall (0-1). Fraction of expected classes that the NLQ pipeline "
                        "actually retrieved. 1.0 = all required classes were found.")
@@ -1283,7 +1283,7 @@ with tab_eval:
                        "reference query: 60% normalized column name overlap (with fuzzy matching) "
                        "+ 40% row count similarity.")
 
-        j1, j2, j3, j4 = st.columns(4)
+        j1, j2, j3 = st.columns(3)
         j1.metric("Completeness", f"{eval_stats['avg_completeness']:.1f}/5",
                   help="LLM judge (1-5). Does the generated query capture all the data elements "
                        "and operations requested? 5 = perfectly complete, 1 = missing most elements.")
@@ -1293,12 +1293,6 @@ with tab_eval:
         j3.metric("Relevance", f"{eval_stats['avg_relevance']:.1f}/5",
                   help="LLM judge (1-5). Would the results actually answer the user's question? "
                        "5 = perfectly relevant, 1 = irrelevant results.")
-        j4.metric("Fidelity", f"{eval_stats['avg_fidelity']:.1f}/5",
-                  help="LLM judge (1-5). When the question asks for derived/computed attributes "
-                       "that don't exist on the model (e.g. 'full name' from firstName+lastName, "
-                       "'line total' from price*qty), does the query correctly synthesize them "
-                       "from available properties? 5 = correct derivation, 3 = N/A (no derived "
-                       "attributes needed), 1 = hallucinated a non-existent property.")
 
         pass_col, succ_col, cnt_col = st.columns(3)
         pass_col.metric("Pass Rate", f"{eval_stats['pass_rate']:.0%}",
@@ -1320,7 +1314,7 @@ with tab_eval:
                 st.info(f"**Overall Score ({overall:.2f}):** Good, but room for improvement. Check the weaker metrics below for specific guidance.")
             else:
                 st.warning(f"**Overall Score ({overall:.2f}):** Needs attention. One or more metrics are dragging down the composite score significantly.")
-            st.caption("Weighted composite: Recall (15%) + Precision (5%) + Answer Accuracy (20%) + Ops Coverage (10%) + Completeness (10%) + Faithfulness (10%) + Relevance (10%) + Fidelity (20%)")
+            st.caption("Weighted composite: Recall (20%) + Precision (5%) + Answer Accuracy (25%) + Ops Coverage (10%) + Completeness (15%) + Faithfulness (10%) + Relevance (15%)")
 
             st.markdown("---")
 
@@ -1394,14 +1388,6 @@ with tab_eval:
             else:
                 st.markdown(f"**Relevance ({rel:.1f}/5):** Some queries don't address the actual question. This suggests the LLM is misinterpreting the intent.")
 
-            # --- Fidelity ---
-            fid = _s["avg_fidelity"]
-            if fid <= 3.2:
-                st.markdown(f"**Fidelity ({fid:.1f}/5):** Most cases don't require derived attributes (scored 3 = N/A). This metric only activates when questions need computed values like 'full name' from firstName+lastName or 'line total' from price*qty. To get a meaningful score, add eval cases with derived attribute requirements.")
-            elif fid >= 4.0:
-                st.markdown(f"**Fidelity ({fid:.1f}/5):** Good — derived attributes are being correctly synthesized from available properties.")
-            else:
-                st.markdown(f"**Fidelity ({fid:.1f}/5):** Some derived attributes are not being computed correctly. Check that the system prompt demonstrates how to combine properties in project lambdas.")
 
         # Per-domain breakdown
         by_diff = eval_stats.get("by_difficulty", {})
@@ -1432,7 +1418,6 @@ with tab_eval:
                 "Compl.": round(r.judge_completeness, 1),
                 "Faith.": round(r.judge_faithfulness, 1),
                 "Relev.": round(r.judge_relevance, 1),
-                "Fidel.": round(r.judge_fidelity, 1),
                 "Ops Cov.": round(r.ops_coverage, 2),
                 "Root OK": "✓" if r.root_class_match else "✗",
                 "Pass": "✅" if r.overall_score > 0.6 else "❌",

@@ -144,7 +144,6 @@ class TestComputeOverallScore:
             judge_completeness=5.0,
             judge_faithfulness=5.0,
             judge_relevance=5.0,
-            judge_fidelity=5.0,
         )
         score = compute_overall_score(result)
         assert abs(score - 1.0) < 0.001
@@ -159,7 +158,6 @@ class TestComputeOverallScore:
             judge_completeness=0.0,
             judge_faithfulness=0.0,
             judge_relevance=0.0,
-            judge_fidelity=0.0,
         )
         score = compute_overall_score(result)
         assert score == 0.0
@@ -175,32 +173,15 @@ class TestComputeOverallScore:
             judge_completeness=4.0,
             judge_faithfulness=3.0,
             judge_relevance=4.0,
-            judge_fidelity=4.0,
         )
-        # 0.15*0.8 + 0.05*0.5 + 0.20*0.7 + 0.10*0.9 + 0.10*(4/5) + 0.10*(3/5) + 0.10*(4/5) + 0.20*(4/5)
-        # = 0.12 + 0.025 + 0.14 + 0.09 + 0.08 + 0.06 + 0.08 + 0.16 = 0.755
+        # 0.20*0.8 + 0.05*0.5 + 0.25*0.7 + 0.10*0.9 + 0.15*(4/5) + 0.10*(3/5) + 0.15*(4/5)
+        # = 0.16 + 0.025 + 0.175 + 0.09 + 0.12 + 0.06 + 0.12 = 0.75
         score = compute_overall_score(result)
-        assert abs(score - 0.755) < 0.01
+        assert abs(score - 0.75) < 0.01
 
     def test_weights_sum_to_one(self):
         """Verify that the weight coefficients sum to 1.0."""
-        assert abs(0.15 + 0.05 + 0.20 + 0.10 + 0.10 + 0.10 + 0.10 + 0.20 - 1.0) < 0.001
-
-    def test_fidelity_weight_is_highest_judge(self):
-        """Fidelity has the highest weight (20%) among judge dimensions."""
-        # With only fidelity at 5 and everything else at 0
-        result = EvalResult(
-            case_id="test", success=True,
-            judge_fidelity=5.0,
-        )
-        score_fidelity_only = compute_overall_score(result)
-        # With only completeness at 5 and everything else at 0
-        result2 = EvalResult(
-            case_id="test", success=True,
-            judge_completeness=5.0,
-        )
-        score_completeness_only = compute_overall_score(result2)
-        assert score_fidelity_only > score_completeness_only
+        assert abs(0.20 + 0.05 + 0.25 + 0.10 + 0.15 + 0.10 + 0.15 - 1.0) < 0.001
 
 
 # ── load_cases tests ─────────────────────────────────────────────────────────
