@@ -1,95 +1,165 @@
 # Legend Ground Zero
 
-> **The definitive starting point for grounding AI agents in institutional data logic with zero friction**
+### Mission control for institutional data — write Pure, see SQL, ask in English, validate with eval. One Streamlit app, zero friction.
 
-**Legend Workbench** is an interactive Streamlit application that brings together the full Legend Intelligence engine — Pure language queries, real-time SQL compilation, LLM-powered natural language querying, and an interactive Pure function reference — in a single zero-friction UI.
+Legend Ground Zero is the **front door** to the Legend stack. Point it at a running [legend-intelligence](https://github.com/absnarang/legend-intelligence) backend and get a bidirectional Pure ↔ SQL editor, a natural language query interface, a 36-example interactive cheat sheet, and a scoring eval framework — all in a single browser tab.
 
----
-
-## What It Is
-
-Ground Zero is the **front door** to the Legend stack. Point it at a running [legend-intelligence](https://github.com/absnarang/legend-intelligence) backend and you get:
-
-- **Pure ↔ SQL bidirectional editor** — write Pure, see the exact generated SQL; edit SQL, get it translated back
-- **Query executor** — run Pure queries against in-memory DuckDB, see results as a table
-- **NLQ tab** — type a question in plain English, get a runnable Pure query (Claude haiku/sonnet/opus via your Pro/Max subscription)
-- **Cheat Sheet** — 36 interactive Pure function examples with full Legend-speak documentation, runnable against the live Northwind dataset
-- **Pre-built data models** — ETF/Mutual Fund (financial) and Northwind (relational) with realistic seed data
+> **7 tabs · 2 domain models · 36 cheat sheet examples · 47 eval cases · 7 scoring dimensions**
 
 ---
 
-## Quick Start
+## What Problem Does This Solve?
 
-```bash
-# 1. Install dependencies
-pip install streamlit requests pandas
+| Today | With Ground Zero |
+|-------|-----------------|
+| Learning Pure means reading spec docs and hoping your syntax is right | 36 runnable examples with generated SQL and line-by-line explanations |
+| NLQ demos require a notebook, API keys, and manual inspection | Type a question → see retrieved classes, generated Pure, SQL, and results in one screen |
+| Validating NLQ accuracy means eyeballing a handful of queries | 47-case eval framework scores retrieval, accuracy, and LLM faithfulness automatically |
+| Translating between Pure and SQL requires running two separate tools | Bidirectional editor: Pure → SQL via compiler, SQL → Pure via Claude |
+| Onboarding to a new data model takes days of meetings | Seed data loads in one click, example queries demonstrate every operation |
+| Understanding what the compiler actually generates requires reading logs | Every query shows the exact SQL that reaches DuckDB |
 
-# 2. Start the legend-intelligence backend (port 8080)
-#    See: https://github.com/absnarang/legend-intelligence
+---
 
-# 3. Run the workbench
-streamlit run playground.py
+## Architecture
+
+```mermaid
+graph LR
+    subgraph "Ground Zero (Streamlit)"
+        PureSQL["⇄ Pure ↔ SQL"]
+        RawSQL["🗄️ Raw SQL"]
+        Seed["🌱 Seed Data"]
+        NLQ["🔍 NLQ"]
+        Cheat["📚 Cheat Sheet"]
+        Eval["📊 Eval"]
+        About["📖 About"]
+    end
+
+    subgraph "Legend Intelligence (Java)"
+        Execute["/engine/execute"]
+        Plan["/engine/plan"]
+        SQLEp["/engine/sql"]
+        NlqEp["/engine/nlq"]
+    end
+
+    subgraph "Storage"
+        DuckDB["DuckDB<br/>In-Memory"]
+    end
+
+    PureSQL --> Plan
+    PureSQL --> Execute
+    RawSQL --> SQLEp
+    Seed --> SQLEp
+    NLQ --> NlqEp
+    Cheat --> Plan
+    Cheat --> Execute
+    Eval --> NlqEp
+    Execute --> DuckDB
+    Plan --> DuckDB
+    SQLEp --> DuckDB
+    NlqEp --> DuckDB
 ```
 
-Open **http://localhost:8501** in your browser.
+---
+
+## Pure Query Execution
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant GZ as Ground Zero
+    participant Engine as Legend Intelligence
+    participant DB as DuckDB
+
+    User->>GZ: Write Pure query in editor
+    GZ->>Engine: POST /engine/plan {pureQuery, model}
+    Engine-->>GZ: Generated SQL
+    GZ->>GZ: Display SQL in right pane
+    User->>GZ: Click "Execute"
+    GZ->>Engine: POST /engine/execute {pureQuery, model}
+    Engine->>DB: Compiled SQL
+    DB-->>Engine: ResultSet
+    Engine-->>GZ: JSON rows
+    GZ->>User: Results table + row count
+```
 
 ---
 
-## Tabs
+## NLQ Pipeline (Visible End-to-End)
 
-| Tab | Description |
-|-----|-------------|
-| **⇄ Pure ↔ SQL** | Bidirectional editor: Pure → SQL via engine compiler; SQL → Pure via Claude |
-| **🗄️ Raw SQL** | Execute raw SQL directly against the DuckDB store |
-| **🌱 Seed Data** | View and run the SQL seed scripts to populate in-memory tables |
-| **🔍 NLQ** | Natural language → Pure query via the NLQ pipeline |
-| **📚 Cheat Sheet** | 36 runnable Pure examples with full arg-level documentation |
-| **📖 About** | Pure syntax quick reference and how the engine works |
+```mermaid
+sequenceDiagram
+    participant PM as Portfolio Manager
+    participant GZ as Ground Zero
+    participant NLQ as /engine/nlq
+    participant SI as SemanticIndex
+    participant LLM as Claude / Gemini
+    participant DB as DuckDB
 
----
-
-## Cheat Sheet
-
-The Cheat Sheet tab is a living Pure language reference built on top of the Northwind dataset (Categories, Products, Suppliers, Customers, Employees, Orders, OrderDetails). Every entry shows:
-
-- The **Pure query** — runnable against the live engine with one click
-- The **generated SQL** — so you can see exactly what the engine compiles to
-- A **"How it works"** expander — full Legend-speak documentation with function signature, each argument by name and type, SQL equivalent, and behavioral notes
-
-**36 entries across 9 groups:**
-
-| Group | Functions covered |
-|-------|------------------|
-| **Fundamentals** | `project`, `filter`, `sort`, `take`, filter-after-project, `distinct` |
-| **Aggregation** | `groupBy` (count, sum, avg+count, HAVING pattern) |
-| **Joins** | Navigation joins (1-hop, multi-hop, filter-through-association), explicit `join` (INNER, LEFT) |
-| **Column Manipulation** | `rename`, `select` |
-| **Set Operations** | `concatenate` (UNION ALL) |
-| **Slicing** | `drop`, `slice`, `first` |
-| **Window Functions** | `rank`, `denseRank`, `lag`, `lead`, running `sum`, `rowNumber`, `ntile`, `percentRank`, `cumulativeDistribution` |
-| **AsOf Joins** | `asOfJoin` with equality + time condition; time-only form |
-| **Variant / Flatten** | `flatten` — reference syntax (requires `lateral`/full engine; 7/7 DuckDB PCT) |
-
-All 35 executable entries are covered by an automated pytest suite (54 tests pass, 1 skipped for the reference-only flatten entry).
+    PM->>GZ: "Which EQUITY ETFs have expense ratio below 10 bps?"
+    GZ->>NLQ: POST {question, model code, domain}
+    NLQ->>SI: TF-IDF retrieval
+    SI-->>NLQ: [Fund, Holding] + scores
+    NLQ->>LLM: Schema context + question
+    LLM-->>NLQ: {rootClass, pureQuery, explanation}
+    NLQ->>DB: Compile + execute Pure
+    DB-->>NLQ: Results
+    NLQ-->>GZ: Full response (query + SQL + results + latency)
+    GZ->>PM: Display: retrieved classes, Pure query, SQL, explanation, results table
+```
 
 ---
 
-## NLQ Tab
+## Key Concepts
 
-The NLQ tab connects to the `/engine/nlq` endpoint on the legend-intelligence backend.
+### :telescope: Seven Tabs, One Workflow
 
-**Supported LLM models** (all via your Claude Pro/Max subscription — no API key needed):
-- `claude-haiku-4-5` — fastest, default
-- `claude-sonnet-4-6` — more capable
-- `claude-opus-4-6` — most capable
+| Tab | Icon | What It Does | Audience |
+|-----|------|-------------|----------|
+| **Pure ↔ SQL** | ⇄ | Bidirectional editor — write Pure, see SQL; write SQL, get Pure back | Engineers, Analysts |
+| **Raw SQL** | 🗄️ | Execute raw SQL against the seeded DuckDB store | Data Engineers |
+| **Seed Data** | 🌱 | Load ETF or Northwind seed data into in-memory tables | Everyone (setup) |
+| **NLQ** | 🔍 | Natural language → Pure → SQL → results pipeline | PMs, Desk Strategists |
+| **Cheat Sheet** | 📚 | 36 runnable Pure examples with full documentation | New users, Onboarding |
+| **Eval** | 📊 | Score NLQ accuracy across 47 cases with 7 dimensions | NLQ developers |
+| **About** | 📖 | Pure syntax reference and association model docs | Reference |
 
-**Domain models:**
-- ETF / Mutual Fund (financial) — Fund, Security, Holding, NAVRecord with full NlqProfile annotations
-- Company / Person (default) — Person, Department with association-based JOINs
+### :left_right_arrow: Bidirectional Pure ↔ SQL Translation
 
----
+The Pure ↔ SQL tab is a dual-pane editor:
 
-## Example NLQ Questions
+- **Pure → SQL** — sends your Pure query to the Legend Intelligence compiler, shows the exact generated SQL
+- **SQL → Pure** — sends your SQL to Claude, which translates it back to idiomatic Pure
+- **Execute** — runs the Pure query end-to-end and displays results as a table
+
+This lets you learn Pure by writing SQL you already know, or verify what the compiler generates by reading the SQL output.
+
+### :books: Cheat Sheet — 36 Interactive Examples
+
+Every Pure TDS operation demonstrated on the Northwind dataset, organized by category:
+
+| Category | Examples | Operations Covered |
+|----------|----------|-------------------|
+| **Basics** | 2 | `project`, `filter` |
+| **Slicing** | 3 | `take`, `skip`, `drop` |
+| **Column Manipulation** | 3 | `rename`, `select` |
+| **Joins** | 4 | Navigation joins (1-hop, multi-hop), explicit `join` (INNER, LEFT) |
+| **GroupBy** | 3 | `groupBy` with count, sum, avg, HAVING pattern |
+| **Set Operations** | 2 | `concatenate` (UNION ALL) |
+| **Window Functions** | 3 | `rank`, `lag`, `lead` |
+| **Window** | 2 | `rowNumber`, `ntile`, `percentRank`, `cumulativeDistribution` |
+| **Extend** | 2 | Calculated columns |
+| **Variant / Flatten** | 2 | `flatten` — reference syntax |
+| **AsOf Join** | 2 | `asOfJoin` with equality + time condition |
+
+Each entry shows:
+- The **Pure query** — runnable against the live engine
+- The **generated SQL** — what the compiler actually produces
+- A **"How it works"** expander — function signature, arguments by name and type, SQL equivalent, behavioral notes
+
+### :mag: NLQ — Ask Your Data in English
+
+Select a domain model (ETF or Northwind), pick a Claude model, type a question:
 
 ```
 What are the top 5 holdings of SPY by weight?
@@ -97,26 +167,116 @@ Which EQUITY ETFs have expense ratio below 0.1%?
 Show me all TECHNOLOGY stocks with market cap above 2 trillion
 What was the average NAV of QQQ in January 2024?
 Which funds hold AAPL and what is its total weight across all ETFs?
+Show all products in the Beverages category sorted by price descending
+Which employees made the most sales by total order value?
+```
+
+The NLQ tab shows the full pipeline output: retrieved classes with scores, generated Pure query, compiled SQL, LLM explanation, and results table.
+
+### :chart_with_upwards_trend: Eval Framework — 7 Scoring Dimensions
+
+The Eval tab runs NLQ end-to-end against 47 test cases (23 Northwind + 24 ETF) and scores each response:
+
+| Dimension | Weight | What It Measures |
+|-----------|--------|-----------------|
+| **Retrieval Recall** | 20% | Did the pipeline retrieve all required classes? |
+| **Retrieval Precision** | 5% | F1-style score — retrieved vs. expected classes |
+| **Answer Accuracy** | 25% | Column overlap (60%) + row count similarity (40%) vs. reference |
+| **Ops Coverage** | 10% | Fraction of required Pure operations in generated query |
+| **Completeness** | 15% | LLM judge: does the query capture all requested data elements? |
+| **Faithfulness** | 10% | LLM judge: is the query logically accurate, no hallucinations? |
+| **Relevance** | 15% | LLM judge: do results actually answer the user's question? |
+
+**Pass threshold:** weighted composite > 0.6
+
+---
+
+## Domain Models
+
+### ETF / Mutual Fund
+
+| Class | Stereotype | Key Properties | Role |
+|-------|-----------|---------------|------|
+| `etf::Fund` | `core` | ticker, fundName, aum, assetClass, sector, expenseRatio, benchmarkIndex | Investment vehicle |
+| `etf::Security` | `core` | ticker, companyName, sector, country, marketCap | Underlying stock/bond |
+| `etf::Holding` | `junction` | weight, shares, marketValue | Fund → Security bridge |
+| `etf::NAVRecord` | `timeseries` | navDate, nav, volume | Daily price snapshots |
+
+**Associations:** Fund ↔ Holding, Security ↔ Holding, Fund ↔ NAVRecord
+**Seed data:** 5 funds (SPY, QQQ, VTI, AGG, GLD) · 10 securities · 22 holdings · 19 NAV records
+
+### Northwind (Relational)
+
+| Class | Stereotype | Key Properties | Role |
+|-------|-----------|---------------|------|
+| `northwind::model::Category` | `core` | categoryName, description | Product classification |
+| `northwind::model::Supplier` | `core` | companyName, country, city | Product source |
+| `northwind::model::Product` | `core` | productName, unitPrice, unitsInStock, discontinued | Catalog item |
+| `northwind::model::Customer` | `core` | companyName, contactName, city, country | Buyer |
+| `northwind::model::Employee` | `core` | firstName, lastName, title, hireDate | Sales rep |
+| `northwind::model::Order` | `core` | orderDate, freight, shipCountry | Transaction header |
+| `northwind::model::OrderDetail` | `junction` | unitPrice, quantity, discount | Line-item bridge |
+
+**Associations:** Category ↔ Product, Supplier ↔ Product, Customer ↔ Order, Employee ↔ Order, Order ↔ OrderDetail, OrderDetail ↔ Product
+**Seed data:** 8 categories · 5 suppliers · ~15 products · ~6 customers · 9 employees · ~830 orders · ~2,150 order details
+
+---
+
+## Quick Start
+
+```bash
+# 1. Start the legend-intelligence backend (port 8080)
+#    See: https://github.com/absnarang/legend-intelligence
+cd legend-lite && mvn package -DskipTests -q && ./start-nlq.sh &
+
+# 2. Install Python dependencies
+pip install streamlit requests pandas
+
+# 3. Run the workbench
+streamlit run playground.py
+
+# 4. Open http://localhost:8501 in your browser
+
+# 5. Click "Seed Data" tab → load ETF or Northwind data → start querying
 ```
 
 ---
 
-## Architecture
+## Example Queries
 
-```
-playground.py  (Streamlit — Legend Workbench)
-    │
-    ├── POST /engine/plan      → Pure → SQL (compile only)
-    ├── POST /engine/execute   → Pure → results
-    ├── POST /engine/sql       → raw SQL → results
-    └── POST /engine/nlq       → English → Pure query
-         │
-         └── legend-intelligence backend (Java, port 8080)
-```
+| Question | Domain | Difficulty | Key Operations |
+|----------|--------|-----------|---------------|
+| What are the top 5 holdings of SPY by weight? | ETF | Medium | Navigation join, filter, sort, limit |
+| Which EQUITY ETFs have expense ratio below 0.1%? | ETF | Easy | Filter with enum + numeric comparison |
+| Total AUM by asset class | ETF | Medium | GroupBy, sum aggregation |
+| Show all products in the Beverages category sorted by price | Northwind | Easy | Navigation join, filter, sort |
+| Which employees made the most sales by total order value? | Northwind | Hard | Multi-hop join, groupBy, arithmetic |
+| Average freight by ship country for orders above $50 | Northwind | Medium | Filter, groupBy, avg aggregation |
+| Rank funds by AUM within each asset class | ETF | Hard | Window function (rank), partition |
+| What is AAPL's total weight across all ETFs? | ETF | Medium | Filter, groupBy, sum, navigation join |
 
 ---
 
-## Running the Tests
+## Why This Matters for S&T
+
+**Instant feedback loop** — Write a Pure query, see the SQL, execute it, iterate. No build step, no deployment, no waiting. The compile-execute cycle is under a second.
+
+**NLQ validation** — Don't just demo NLQ to stakeholders. Run 47 eval cases, get precision/recall/accuracy scores, prove the pipeline works before shipping to production.
+
+**Onboarding** — New team members can learn Pure through 36 runnable examples instead of reading spec docs. Each example shows Pure, SQL, and a detailed explanation.
+
+**Bidirectional translation** — Know SQL? Write it in the right pane and get Pure back. Know Pure? See exactly what SQL the compiler generates. The translation is transparent, not a black box.
+
+---
+
+## Testing and Quality
+
+| Metric | Value |
+|--------|-------|
+| Cheat sheet tests | 36 parametrized (54 assertions, 1 skipped) |
+| Eval test cases | 47 (23 Northwind + 24 ETF) |
+| Scoring unit tests | Coverage for all 7 dimensions |
+| Baseline — full pipeline | Precision ~0.51, Recall 1.00, Pass 100% |
 
 ```bash
 # Backend must be running on port 8080 first
@@ -127,7 +287,25 @@ pytest tests/test_northwind_cheatsheet.py -v
 
 ---
 
-## ⚠️ Disclaimer
+## File Map
+
+```
+legend-groundzero/
+├── playground.py              # Streamlit workbench (1,501 lines — 7 tabs)
+├── etf_data.py                # ETF model, seed SQL, 9 example questions (371 lines)
+├── northwind_data.py          # Northwind model, seed SQL, 36 cheat sheet examples (1,649 lines)
+├── nlq_eval.py                # Eval scoring framework — 7 dimensions (478 lines)
+├── eval_cases.json            # 47 eval test cases (23 Northwind + 24 ETF)
+├── tests/
+│   ├── test_northwind_cheatsheet.py  # 36 parametrized cheat sheet tests
+│   └── test_nlq_eval.py             # Scoring function unit tests
+├── legend-lite/               # → legend-intelligence (separate repo)
+└── .env                       # LLM provider config
+```
+
+---
+
+## :warning: Disclaimer
 
 > **All data, names, and figures in this application are entirely fictional and used for educational and illustrative purposes only.**
 
@@ -149,4 +327,4 @@ pytest tests/test_northwind_cheatsheet.py -v
 
 ## Related
 
-- [legend-intelligence](https://github.com/absnarang/legend-intelligence) — the Pure language engine and NLQ pipeline (Java backend)
+- [legend-intelligence](https://github.com/absnarang/legend-intelligence) — The Pure language compiler, SQL execution engine, and NLQ pipeline (Java backend)
