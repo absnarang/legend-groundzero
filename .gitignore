@@ -1,9 +1,10 @@
 # Backend engine (separate repo: legend-intelligence)
-legend-lite/
+legend-intelligence/
 
 # Scratch / internal docs
 legend_lite_debrief.md
 opportunities.md
+CLAUDE.md
 
 # Python
 __pycache__/

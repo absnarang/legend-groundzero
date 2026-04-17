@@ -13,7 +13,7 @@ Run:
 
 Requirements:
     pip install pytest requests
-    ./legend-lite/start-nlq.sh &   # backend must be running on :8080
+    ./legend-intelligence/start-nlq.sh &   # backend must be running on :8080
 """
 
 import json
@@ -66,7 +66,7 @@ def require_engine():
         time.sleep(2)
     pytest.skip(
         "Legend engine not reachable at http://localhost:8080 — "
-        "start it with ./legend-lite/start-nlq.sh before running tests."
+        "start it with ./legend-intelligence/start-nlq.sh before running tests."
     )
 
 

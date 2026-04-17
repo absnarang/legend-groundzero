@@ -227,7 +227,7 @@ The Eval tab runs NLQ end-to-end against 47 test cases (23 Northwind + 24 ETF) a
 ```bash
 # 1. Start the legend-intelligence backend (port 8080)
 #    See: https://github.com/absnarang/legend-intelligence
-cd legend-lite && mvn package -DskipTests -q && ./start-nlq.sh &
+cd legend-intelligence && mvn package -DskipTests -q && ./start-nlq.sh &
 
 # 2. Install Python dependencies
 pip install streamlit requests pandas
@@ -299,7 +299,7 @@ legend-groundzero/
 ├── tests/
 │   ├── test_northwind_cheatsheet.py  # 36 parametrized cheat sheet tests
 │   └── test_nlq_eval.py             # Scoring function unit tests
-├── legend-lite/               # → legend-intelligence (separate repo)
+├── legend-intelligence/        # Legend Intelligence engine (separate repo)
 └── .env                       # LLM provider config
 ```
 
