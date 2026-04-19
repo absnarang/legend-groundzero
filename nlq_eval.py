@@ -31,6 +31,8 @@ class EvalCase:
     domain: str
     difficulty: str
     expected: dict  # mustIncludeClasses, rootClass, referenceQuery, mustContainOps, properties
+    expect_decline: bool = False
+    decline_category: str = ""
 
 
 @dataclass
@@ -45,12 +47,15 @@ class EvalResult:
     judge_completeness: float = 0.0
     judge_faithfulness: float = 0.0
     judge_relevance: float = 0.0
+    query_precision: float = 0.0
     judge_fidelity: float = 0.0  # Reserved for future use
     overall_score: float = 0.0
     generated_query: str = ""
     latency_ms: int = 0
     error: Optional[str] = None
     judge_rationale: str = ""
+    follow_up_triggered: bool = False
+    follow_up_usefulness: float = 0.0
 
 
 # ── Scoring functions ────────────────────────────────────────────────────────
@@ -76,6 +81,48 @@ def score_retrieval(expected: dict, retrieved_classes: list[str]) -> tuple[float
     precision = (2 * len(intersection)) / (len(intersection) + len(retrieved_base)) if retrieved_base else 0.0
 
     return recall, precision
+
+
+def score_query_precision(expected: dict, generated_query: str, actual_root: str) -> float:
+    """
+    Measure how targeted the generated Pure query is: what fraction of classes
+    referenced in the query are actually needed (per mustIncludeClasses)?
+
+    Formula: |classes_in_query ∩ expected| / |classes_in_query|
+
+    Classes are detected by:
+      - actual_root (the rootClass from the NLQ response)
+      - Scanning the query string for mustIncludeClasses names (case-insensitive),
+        which appear in association navigation like $d.product.productName
+    """
+    must_include = set(expected.get("mustIncludeClasses", []))
+    if not must_include:
+        return 1.0
+
+    def base_name(cls: str) -> str:
+        return cls.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+
+    expected_bases = {base_name(c).lower() for c in must_include}
+
+    # Collect classes referenced in the query
+    classes_in_query: set[str] = set()
+
+    # 1. The root class is always referenced
+    if actual_root:
+        classes_in_query.add(base_name(actual_root).lower())
+
+    # 2. Scan query for class names from mustIncludeClasses
+    query_lower = generated_query.lower()
+    for cls in must_include:
+        bn = base_name(cls).lower()
+        if bn in query_lower:
+            classes_in_query.add(bn)
+
+    if not classes_in_query:
+        return 0.0
+
+    intersection = classes_in_query & expected_bases
+    return len(intersection) / len(classes_in_query)
 
 
 def score_routing(expected_root: str, actual_root: str) -> bool:
@@ -273,21 +320,69 @@ Return your response as JSON only, no markdown:
         return 3.0, 3.0, 3.0, f"Judge error: {e}"
 
 
-def compute_overall_score(result: EvalResult) -> float:
+def score_follow_up_usefulness(
+    question: str,
+    follow_up_question: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-6",
+) -> float:
     """
-    Weighted composite overall score:
-      0.20 * recall
-    + 0.05 * precision
-    + 0.25 * answer_accuracy
-    + 0.10 * ops_coverage
-    + 0.15 * (completeness / 5)
-    + 0.10 * (faithfulness / 5)
-    + 0.15 * (relevance / 5)
+    Use Claude as a judge to score how useful a follow-up question is.
+    Returns a score from 1-5.
     """
+    judge_prompt = f"""You are evaluating the quality of a follow-up question that an NLQ system asked when it could not answer a user's question.
+
+User's original question: {question}
+
+System's follow-up question: {follow_up_question}
+
+Score the follow-up question on usefulness (1-5 scale):
+
+1 = Completely unhelpful — generic, vague, or doesn't help clarify the issue
+2 = Slightly helpful — acknowledges the problem but the follow-up is too broad
+3 = Moderately helpful — points in the right direction but could be more specific
+4 = Very helpful — specific, actionable, and helps the user understand what's needed
+5 = Excellent — precisely identifies the gap and guides the user to a successful query
+
+Return your response as JSON only, no markdown:
+{{"usefulness": <int>, "rationale": "<brief explanation>"}}"""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=256,
+            messages=[{"role": "user", "content": judge_prompt}],
+        )
+        text = response.content[0].text.strip()
+        text = re.sub(r'^```\w*\n?', '', text).rstrip('`').strip()
+        result = json.loads(text)
+        return float(result.get("usefulness", 3))
+    except Exception:
+        return 3.0
+
+
+def compute_overall_score(result: EvalResult, expect_decline: bool = False) -> float:
+    """
+    Weighted composite overall score.
+
+    For decline cases (expectDecline=true):
+      0.60 * follow_up_triggered + 0.40 * (follow_up_usefulness / 5)
+
+    For normal cases:
+      0.20 * recall + 0.10 * query_precision + 0.20 * answer_accuracy
+    + 0.10 * ops_coverage + 0.15 * (completeness/5) + 0.10 * (faithfulness/5)
+    + 0.15 * (relevance/5)
+    """
+    if expect_decline:
+        triggered = 1.0 if result.follow_up_triggered else 0.0
+        return 0.60 * triggered + 0.40 * (result.follow_up_usefulness / 5.0)
+
     return (
         0.20 * result.retrieval_recall
-        + 0.05 * result.retrieval_precision
-        + 0.25 * result.answer_accuracy
+        + 0.10 * result.query_precision
+        + 0.20 * result.answer_accuracy
         + 0.10 * result.ops_coverage
         + 0.15 * (result.judge_completeness / 5.0)
         + 0.10 * (result.judge_faithfulness / 5.0)
@@ -310,6 +405,8 @@ def load_cases(path: str | Path) -> list[EvalCase]:
             domain=item["domain"],
             difficulty=item["difficulty"],
             expected=item["expected"],
+            expect_decline=item.get("expectDecline", False),
+            decline_category=item.get("declineCategory", ""),
         ))
     return cases
 
@@ -373,6 +470,24 @@ def run_eval(
             continue
 
         result.success = True
+
+        # Handle decline cases
+        if case.expect_decline:
+            result.follow_up_triggered = bool(nlq_resp.get("cannotAnswer", False))
+            follow_up_q = nlq_resp.get("followUpQuestion", "")
+            if result.follow_up_triggered and follow_up_q and api_key:
+                result.follow_up_usefulness = score_follow_up_usefulness(
+                    case.question, follow_up_q, api_key
+                )
+            elif result.follow_up_triggered:
+                result.follow_up_usefulness = 3.0  # default when no judge
+            result.overall_score = compute_overall_score(result, expect_decline=True)
+            result.generated_query = follow_up_q if result.follow_up_triggered else nlq_resp.get("pureQuery", "")
+            results.append(result)
+            if progress_callback:
+                progress_callback(i + 1, len(filtered), case.id)
+            continue
+
         gen_query = nlq_resp.get("pureQuery", "")
         result.generated_query = gen_query
 
@@ -386,6 +501,11 @@ def run_eval(
         actual_root = nlq_resp.get("rootClass", "")
         result.root_class_match = score_routing(
             case.expected.get("rootClass", ""), actual_root
+        )
+
+        # Query precision
+        result.query_precision = score_query_precision(
+            case.expected, gen_query, actual_root
         )
 
         # Ops coverage
@@ -428,7 +548,7 @@ def run_eval(
 
 # ── Summary stats ────────────────────────────────────────────────────────────
 
-def summary_stats(results: list[EvalResult]) -> dict:
+def summary_stats(results: list[EvalResult], cases: list[EvalCase] | None = None) -> dict:
     """Compute aggregate statistics from eval results."""
     if not results:
         return {
@@ -436,6 +556,7 @@ def summary_stats(results: list[EvalResult]) -> dict:
             "avg_overall_score": 0.0,
             "avg_recall": 0.0,
             "avg_precision": 0.0,
+            "avg_query_precision": 0.0,
             "avg_answer_accuracy": 0.0,
             "avg_completeness": 0.0,
             "avg_faithfulness": 0.0,
@@ -443,6 +564,8 @@ def summary_stats(results: list[EvalResult]) -> dict:
             "pass_rate": 0.0,
             "success_rate": 0.0,
             "by_difficulty": {},
+            "follow_up_rate": 0.0,
+            "follow_up_usefulness": 0.0,
         }
 
     n = len(results)
@@ -453,6 +576,7 @@ def summary_stats(results: list[EvalResult]) -> dict:
         "avg_overall_score": sum(r.overall_score for r in results) / n,
         "avg_recall": sum(r.retrieval_recall for r in results) / n,
         "avg_precision": sum(r.retrieval_precision for r in results) / n,
+        "avg_query_precision": sum(r.query_precision for r in results) / n,
         "avg_answer_accuracy": sum(r.answer_accuracy for r in results) / n,
         "avg_completeness": sum(r.judge_completeness for r in results) / n,
         "avg_faithfulness": sum(r.judge_faithfulness for r in results) / n,
@@ -460,6 +584,27 @@ def summary_stats(results: list[EvalResult]) -> dict:
         "pass_rate": sum(1 for r in results if r.overall_score > 0.6) / n,
         "success_rate": len(successful) / n,
     }
+
+    # Follow-up metrics (decline cases)
+    # Build a lookup of case_id -> EvalCase for decline detection
+    decline_case_ids = set()
+    if cases:
+        decline_case_ids = {c.id for c in cases if c.expect_decline}
+    else:
+        # Fallback: detect by follow_up_triggered flag
+        decline_case_ids = {r.case_id for r in results if r.follow_up_triggered}
+
+    decline_results = [r for r in results if r.case_id in decline_case_ids]
+    if decline_results:
+        n_decline = len(decline_results)
+        stats["follow_up_rate"] = sum(1 for r in decline_results if r.follow_up_triggered) / n_decline
+        triggered = [r for r in decline_results if r.follow_up_triggered]
+        stats["follow_up_usefulness"] = (
+            sum(r.follow_up_usefulness for r in triggered) / len(triggered) if triggered else 0.0
+        )
+    else:
+        stats["follow_up_rate"] = 0.0
+        stats["follow_up_usefulness"] = 0.0
 
     # Per-domain breakdown
     by_difficulty: dict[str, dict] = {}

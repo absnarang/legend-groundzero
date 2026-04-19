@@ -620,5 +620,174 @@
       "derivedAttributeNote": "expenseRatioBps must be computed as expenseRatio * 10000; this is a unit conversion, not a stored property",
       "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio"], "filters": [], "sortedBy": [] }
     }
+  },
+
+  {
+    "id": "nw-d01",
+    "question": "What is the weather forecast for cities where we have customers?",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "wrong_domain",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "nw-d02",
+    "question": "Show me that order",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "missing_info",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "nw-d03",
+    "question": "Which products will have the highest sales next quarter?",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "unsupported_computation",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "nw-d04",
+    "question": "Show the details",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "ambiguous",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "nw-d05",
+    "question": "What is the correlation between product price and order frequency?",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "unsupported_computation",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "nw-d06",
+    "question": "How does our customer satisfaction compare to competitors?",
+    "domain": "Northwind",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "wrong_domain",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d01",
+    "question": "What is the credit rating of bonds in fixed income funds?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "wrong_domain",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d02",
+    "question": "Show me that fund's performance",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "missing_info",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d03",
+    "question": "Predict which ETF will have the highest return next year",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "unsupported_computation",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d04",
+    "question": "Show the data",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "ambiguous",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d05",
+    "question": "What is the Sharpe ratio of each fund over the past 3 years?",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "unsupported_computation",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
+  },
+  {
+    "id": "etf-d06",
+    "question": "Compare tax efficiency of ETFs versus mutual funds in my portfolio",
+    "domain": "ETF",
+    "difficulty": "easy",
+    "expectDecline": true,
+    "declineCategory": "wrong_domain",
+    "expected": {
+      "mustIncludeClasses": [],
+      "rootClass": "",
+      "referenceQuery": "",
+      "mustContainOps": []
+    }
   }
 ]
