@@ -488,7 +488,7 @@ def run_eval(
                 progress_callback(i + 1, len(filtered), case.id)
             continue
 
-        gen_query = nlq_resp.get("pureQuery", "")
+        gen_query = nlq_resp.get("pureQuery") or ""
         result.generated_query = gen_query
 
         # Retrieval scoring
@@ -530,11 +530,19 @@ def run_eval(
             result.judge_relevance = rel
             result.judge_rationale = rationale
         else:
-            # Default to neutral scores when no judge is available
+            # Default to neutral scores when no judge can run
             result.judge_completeness = 3.0
             result.judge_faithfulness = 3.0
             result.judge_relevance = 3.0
-            result.judge_rationale = "No API key provided; using default scores"
+            if not api_key:
+                reason = "No API key provided"
+            elif not gen_query:
+                reason = "Engine returned no query (likely declined); nothing to judge"
+            elif not ref_query:
+                reason = "Eval case has no referenceQuery; nothing to compare against"
+            else:
+                reason = "Judge skipped"
+            result.judge_rationale = f"{reason}; using default scores"
 
         # Overall score
         result.overall_score = compute_overall_score(result)
