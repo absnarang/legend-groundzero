@@ -614,11 +614,9 @@
     "expected": {
       "mustIncludeClasses": ["Fund"],
       "rootClass": "Fund",
-      "referenceQuery": "etf::Fund.all()->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio], ['ticker', 'fundName', 'expenseRatio'])",
-      "mustContainOps": ["project"],
-      "requiresDerivedAttribute": true,
-      "derivedAttributeNote": "expenseRatioBps must be computed as expenseRatio * 10000; this is a unit conversion, not a stored property",
-      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio"], "filters": [], "sortedBy": [] }
+      "referenceQuery": "etf::Fund.all()->project([f|$f.ticker, f|$f.fundName, f|$f.expenseRatio], ['ticker', 'fundName', 'expenseRatio'])->extend(~expenseRatioBps:{row|$row.expenseRatio*10000})",
+      "mustContainOps": ["project", "extend"],
+      "properties": { "dimensions": ["ticker", "fundName"], "metrics": ["expenseRatio", "expenseRatioBps"], "filters": [], "sortedBy": [] }
     }
   },
 
