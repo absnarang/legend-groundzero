@@ -1010,8 +1010,14 @@ with tab_nlq:
                     st.text(nlq_res["explanation"])
 
         with col_query:
-            st.markdown("**Generated Pure query**")
-            if nlq_res.get("success") and nlq_res.get("pureQuery"):
+            if nlq_res.get("cannotAnswer"):
+                st.markdown("**System declined to generate a query**")
+                st.warning("The system determined it cannot answer this question with the available data model.")
+                follow_up = nlq_res.get("followUpQuestion", "")
+                if follow_up:
+                    st.info(f"**Follow-up question:** {follow_up}")
+            elif nlq_res.get("success") and nlq_res.get("pureQuery"):
+                st.markdown("**Generated Pure query**")
                 pure_q = nlq_res["pureQuery"]
                 st.code(pure_q, language="text")
                 if nlq_res.get("error"):
@@ -1256,7 +1262,8 @@ with tab_eval:
 
         progress_bar.progress(1.0, text="Eval complete!")
         st.session_state["eval_results"] = eval_results
-        st.session_state["eval_stats"] = nlq_eval.summary_stats(eval_results)
+        st.session_state["eval_cases"] = cases
+        st.session_state["eval_stats"] = nlq_eval.summary_stats(eval_results, cases)
 
     # ── Display results ───────────────────────────────────────────────────────
     eval_stats = st.session_state.get("eval_stats")
@@ -1269,15 +1276,15 @@ with tab_eval:
         st.markdown("### Summary Metrics")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Overall Score", f"{eval_stats['avg_overall_score']:.2f}",
-                  help="Weighted composite (0-1). Combines recall (20%), precision (5%), "
-                       "answer accuracy (25%), ops coverage (10%), completeness (15%), "
+                  help="Weighted composite (0-1). Combines recall (20%), query precision (10%), "
+                       "answer accuracy (20%), ops coverage (10%), completeness (15%), "
                        "faithfulness (10%), relevance (15%).")
         m2.metric("Recall", f"{eval_stats['avg_recall']:.2f}",
                   help="Retrieval recall (0-1). Fraction of expected classes that the NLQ pipeline "
                        "actually retrieved. 1.0 = all required classes were found.")
-        m3.metric("Precision", f"{eval_stats['avg_precision']:.2f}",
-                  help="Retrieval precision (0-1). F1-style harmonic mean — penalizes massive "
-                       "over-retrieval but is forgiving for a few extra context classes.")
+        m3.metric("Query Precision", f"{eval_stats['avg_query_precision']:.2f}",
+                  help="Query precision (0-1). Fraction of classes referenced in the generated Pure "
+                       "query that are actually needed. 1.0 = no unnecessary class references.")
         m4.metric("Answer Acc.", f"{eval_stats['avg_answer_accuracy']:.2f}",
                   help="Answer accuracy (0-1). Compares the generated query's results against the "
                        "reference query: 60% normalized column name overlap (with fuzzy matching) "
@@ -1302,6 +1309,16 @@ with tab_eval:
                              "without errors.")
         cnt_col.metric("Cases Evaluated", eval_stats["count"])
 
+        # Follow-up metrics (only show if decline cases exist)
+        if eval_stats.get("follow_up_rate", 0) > 0 or any(
+            r.follow_up_triggered for r in eval_results
+        ):
+            fu1, fu2 = st.columns(2)
+            fu1.metric("Follow-up Rate", f"{eval_stats.get('follow_up_rate', 0):.0%}",
+                       help="Among cases marked expectDecline, what fraction did the system actually decline? Target: 85%.")
+            fu2.metric("Follow-up Usefulness", f"{eval_stats.get('follow_up_usefulness', 0):.2f}/5",
+                       help="Among correct declines, how useful was the follow-up question? (LLM judge, 1-5 scale). Target: 4.25/5.")
+
         # ── Explain section — diagnostic commentary ──────────────────────────
         with st.expander("📖 Explain these metrics", expanded=False):
             _s = eval_stats
@@ -1314,7 +1331,7 @@ with tab_eval:
                 st.info(f"**Overall Score ({overall:.2f}):** Good, but room for improvement. Check the weaker metrics below for specific guidance.")
             else:
                 st.warning(f"**Overall Score ({overall:.2f}):** Needs attention. One or more metrics are dragging down the composite score significantly.")
-            st.caption("Weighted composite: Recall (20%) + Precision (5%) + Answer Accuracy (25%) + Ops Coverage (10%) + Completeness (15%) + Faithfulness (10%) + Relevance (15%)")
+            st.caption("Weighted composite: Recall (20%) + Query Precision (10%) + Answer Accuracy (20%) + Ops Coverage (10%) + Completeness (15%) + Faithfulness (10%) + Relevance (15%)")
 
             st.markdown("---")
 
@@ -1327,14 +1344,18 @@ with tab_eval:
             else:
                 st.markdown(f"**Recall ({recall:.2f}):** Many required classes are not being retrieved. Check that the semantic index has sufficient NlqProfile annotations (descriptions, synonyms, exampleQuestions) for the missing classes.")
 
-            # --- Precision ---
-            precision = _s["avg_precision"]
-            if precision >= 0.70:
-                st.markdown(f"**Precision ({precision:.2f}):** Retrieved class set is well-targeted.")
-            elif precision >= 0.40:
-                st.markdown(f"**Precision ({precision:.2f}):** Extra classes are being retrieved beyond what's needed. This is a known side effect of association expansion (1-hop neighbors get pulled in). Only 5% weight — acceptable tradeoff for high recall. To improve: make expansion conditional or reduce hops.")
+            # --- Query Precision ---
+            qprec = _s["avg_query_precision"]
+            if qprec >= 0.90:
+                st.markdown(f"**Query Precision ({qprec:.2f}):** The generated queries reference only the classes they need. Excellent targeting.")
+            elif qprec >= 0.70:
+                st.markdown(f"**Query Precision ({qprec:.2f}):** Most class references in generated queries are necessary, but some queries reference extra classes. Check for unnecessary association navigation in the generated Pure expressions.")
             else:
-                st.markdown(f"**Precision ({precision:.2f}):** Significant over-retrieval. The semantic index is returning many irrelevant classes, which adds noise to the LLM context.")
+                st.markdown(f"**Query Precision ({qprec:.2f}):** Generated queries frequently reference classes they don't need. The LLM may be over-navigating associations or using wrong root classes.")
+
+            # --- Retrieval Precision (diagnostic) ---
+            precision = _s["avg_precision"]
+            st.markdown(f"**Retrieval Precision ({precision:.2f}):** *(diagnostic — not in overall score)* Measures how targeted TF-IDF class retrieval was. On small models this is structurally capped (~0.33–0.50).")
 
             # --- Answer Accuracy ---
             ans_acc = _s["avg_answer_accuracy"]
@@ -1388,6 +1409,25 @@ with tab_eval:
             else:
                 st.markdown(f"**Relevance ({rel:.1f}/5):** Some queries don't address the actual question. This suggests the LLM is misinterpreting the intent.")
 
+            # --- Follow-up Rate ---
+            fu_rate = _s.get("follow_up_rate", 0)
+            fu_useful = _s.get("follow_up_usefulness", 0)
+            if fu_rate > 0 or any(r.follow_up_triggered for r in eval_results):
+                st.markdown("---")
+                if fu_rate >= 0.85:
+                    st.markdown(f"**Follow-up Rate ({fu_rate:.0%}):** Excellent — the system correctly declines unanswerable questions at or above the 85% target.")
+                elif fu_rate >= 0.60:
+                    st.markdown(f"**Follow-up Rate ({fu_rate:.0%}):** The system declines most unanswerable questions but misses some. Review the decline prompt instructions — the LLM may be generating queries for questions it should refuse.")
+                else:
+                    st.markdown(f"**Follow-up Rate ({fu_rate:.0%}):** Low — the system is generating queries for many unanswerable questions instead of declining. Check that the WHEN TO DECLINE instructions in the system prompt are clear enough.")
+
+                if fu_useful >= 4.25:
+                    st.markdown(f"**Follow-up Usefulness ({fu_useful:.2f}/5):** Excellent — follow-up questions are specific and actionable, meeting the 4.25/5 target.")
+                elif fu_useful >= 3.0:
+                    st.markdown(f"**Follow-up Usefulness ({fu_useful:.2f}/5):** Adequate but could be more specific. The LLM should generate follow-up questions that precisely identify what information is missing or why the question can't be answered.")
+                else:
+                    st.markdown(f"**Follow-up Usefulness ({fu_useful:.2f}/5):** Low — follow-up questions are too generic. Consider adding examples of good follow-up questions to the system prompt.")
+
 
         # Per-domain breakdown
         by_diff = eval_stats.get("by_difficulty", {})
@@ -1412,8 +1452,10 @@ with tab_eval:
             table_data.append({
                 "ID": r.case_id,
                 "Score": round(r.overall_score, 3),
+                "Decline": "✓" if r.follow_up_triggered else "",
                 "Recall": round(r.retrieval_recall, 2),
-                "Precision": round(r.retrieval_precision, 2),
+                "Q.Prec": round(r.query_precision, 2),
+                "Ret.P": round(r.retrieval_precision, 2),
                 "Ans. Acc.": round(r.answer_accuracy, 2),
                 "Compl.": round(r.judge_completeness, 1),
                 "Faith.": round(r.judge_faithfulness, 1),
@@ -1451,7 +1493,8 @@ with tab_eval:
                 if r.judge_rationale:
                     st.markdown(f"**Judge rationale:** {r.judge_rationale}")
                 st.caption(
-                    f"Recall={r.retrieval_recall:.2f} | Precision={r.retrieval_precision:.2f} | "
+                    f"Recall={r.retrieval_recall:.2f} | Q.Prec={r.query_precision:.2f} | "
+                    f"Ret.P={r.retrieval_precision:.2f} | "
                     f"Ops={r.ops_coverage:.2f} | Root={'✓' if r.root_class_match else '✗'} | "
                     f"Latency={r.latency_ms}ms"
                 )
