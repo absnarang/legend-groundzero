@@ -4,7 +4,7 @@
 
 Legend Ground Zero is the **front door** to the Legend stack. Point it at a running [legend-intelligence](https://github.com/absnarang/legend-intelligence) backend and get a bidirectional Pure ↔ SQL editor, a natural language query interface, a 36-example interactive cheat sheet, and a scoring eval framework — all in a single browser tab.
 
-> **7 tabs · 2 domain models · 36 cheat sheet examples · 47 eval cases · 7 scoring dimensions**
+> **7 tabs · 2 domain models · 36 cheat sheet examples · 59 eval cases · 9 scoring dimensions**
 
 ---
 
@@ -14,7 +14,8 @@ Legend Ground Zero is the **front door** to the Legend stack. Point it at a runn
 |-------|-----------------|
 | Learning Pure means reading spec docs and hoping your syntax is right | 36 runnable examples with generated SQL and line-by-line explanations |
 | NLQ demos require a notebook, API keys, and manual inspection | Type a question → see retrieved classes, generated Pure, SQL, and results in one screen |
-| Validating NLQ accuracy means eyeballing a handful of queries | 47-case eval framework scores retrieval, accuracy, and LLM faithfulness automatically |
+| LLM hallucinates answers to unanswerable questions | Graceful decline with follow-up questions when a question is outside the model's scope |
+| Validating NLQ accuracy means eyeballing a handful of queries | 59-case eval framework scores retrieval, accuracy, LLM faithfulness, and follow-up quality automatically |
 | Translating between Pure and SQL requires running two separate tools | Bidirectional editor: Pure → SQL via compiler, SQL → Pure via Claude |
 | Onboarding to a new data model takes days of meetings | Seed data loads in one click, example queries demonstrate every operation |
 | Understanding what the compiler actually generates requires reading logs | Every query shows the exact SQL that reaches DuckDB |
@@ -119,9 +120,9 @@ sequenceDiagram
 | **Pure ↔ SQL** | ⇄ | Bidirectional editor — write Pure, see SQL; write SQL, get Pure back | Engineers, Analysts |
 | **Raw SQL** | 🗄️ | Execute raw SQL against the seeded DuckDB store | Data Engineers |
 | **Seed Data** | 🌱 | Load ETF or Northwind seed data into in-memory tables | Everyone (setup) |
-| **NLQ** | 🔍 | Natural language → Pure → SQL → results pipeline | PMs, Desk Strategists |
+| **NLQ** | 🔍 | Natural language → Pure → SQL → results pipeline (with graceful decline for unanswerable questions) | PMs, Desk Strategists |
 | **Cheat Sheet** | 📚 | 36 runnable Pure examples with full documentation | New users, Onboarding |
-| **Eval** | 📊 | Score NLQ accuracy across 47 cases with 7 dimensions | NLQ developers |
+| **Eval** | 📊 | Score NLQ accuracy across 59 cases with 9 dimensions (including follow-up rate & usefulness) | NLQ developers |
 | **About** | 📖 | Pure syntax reference and association model docs | Reference |
 
 ### :left_right_arrow: Bidirectional Pure ↔ SQL Translation
@@ -173,19 +174,36 @@ Which employees made the most sales by total order value?
 
 The NLQ tab shows the full pipeline output: retrieved classes with scores, generated Pure query, compiled SQL, LLM explanation, and results table.
 
-### :chart_with_upwards_trend: Eval Framework — 7 Scoring Dimensions
+When a question can't be answered — wrong domain, ambiguous, missing context, or requiring unsupported computation — the pipeline **gracefully declines** and suggests a specific follow-up question instead of hallucinating a query.
 
-The Eval tab runs NLQ end-to-end against 47 test cases (23 Northwind + 24 ETF) and scores each response:
+### :chart_with_upwards_trend: Eval Framework — 9 Scoring Dimensions
+
+The Eval tab runs NLQ end-to-end against 59 test cases (26 Northwind + 27 ETF + 6 decline) and scores each response:
+
+**Normal cases (47):**
 
 | Dimension | Weight | What It Measures |
 |-----------|--------|-----------------|
 | **Retrieval Recall** | 20% | Did the pipeline retrieve all required classes? |
-| **Retrieval Precision** | 5% | F1-style score — retrieved vs. expected classes |
-| **Answer Accuracy** | 25% | Column overlap (60%) + row count similarity (40%) vs. reference |
+| **Query Precision** | 10% | Does the generated Pure query reference only the classes it needs? 1.0 = no unnecessary class references |
+| **Answer Accuracy** | 20% | Column overlap (60%) + row count similarity (40%) vs. reference |
 | **Ops Coverage** | 10% | Fraction of required Pure operations in generated query |
 | **Completeness** | 15% | LLM judge: does the query capture all requested data elements? |
 | **Faithfulness** | 10% | LLM judge: is the query logically accurate, no hallucinations? |
 | **Relevance** | 15% | LLM judge: do results actually answer the user's question? |
+
+Retrieval Precision (F1-style TF-IDF score) is still tracked as a diagnostic metric in the per-case table but removed from the overall score — it was structurally capped at ~0.33–0.50 on small models regardless of query quality.
+
+**Decline cases (12):**
+
+When the NLQ pipeline encounters a question it cannot answer — wrong domain, ambiguous, missing context, or requiring unsupported computation — it should **decline gracefully** and suggest a follow-up question instead of hallucinating a query.
+
+| Dimension | Weight | What It Measures | Target |
+|-----------|--------|-----------------|--------|
+| **Follow-up Rate** | 60% | Did the system correctly decline and trigger a follow-up question? A false positive (generating a query for an unanswerable question) scores 0. | 85% |
+| **Follow-up Usefulness** | 40% | How specific and actionable was the suggested follow-up question? Scored by an LLM judge (1-5 scale). A generic "Could you clarify?" scores low; a precise "Which fund's holdings are you interested in?" scores high. | 4.25/5 |
+
+Decline categories tested: wrong domain, missing info, ambiguous, unsupported computation.
 
 **Pass threshold:** weighted composite > 0.6
 
@@ -261,7 +279,7 @@ streamlit run playground.py
 
 **Instant feedback loop** — Write a Pure query, see the SQL, execute it, iterate. No build step, no deployment, no waiting. The compile-execute cycle is under a second.
 
-**NLQ validation** — Don't just demo NLQ to stakeholders. Run 47 eval cases, get precision/recall/accuracy scores, prove the pipeline works before shipping to production.
+**NLQ validation** — Don't just demo NLQ to stakeholders. Run 59 eval cases, get recall/query precision/accuracy scores, prove the pipeline works before shipping to production.
 
 **Onboarding** — New team members can learn Pure through 36 runnable examples instead of reading spec docs. Each example shows Pure, SQL, and a detailed explanation.
 
@@ -274,9 +292,9 @@ streamlit run playground.py
 | Metric | Value |
 |--------|-------|
 | Cheat sheet tests | 36 parametrized (54 assertions, 1 skipped) |
-| Eval test cases | 47 (23 Northwind + 24 ETF) |
-| Scoring unit tests | Coverage for all 7 dimensions |
-| Baseline — full pipeline | Precision ~0.51, Recall 1.00, Pass 100% |
+| Eval test cases | 59 (23 Northwind + 24 ETF + 12 decline) |
+| Scoring unit tests | Coverage for all 9 dimensions |
+| Baseline — full pipeline | Query Precision ~0.90, Recall 1.00, Pass 100% |
 
 ```bash
 # Backend must be running on port 8080 first
@@ -294,8 +312,8 @@ legend-groundzero/
 ├── playground.py              # Streamlit workbench (1,501 lines — 7 tabs)
 ├── etf_data.py                # ETF model, seed SQL, 9 example questions (371 lines)
 ├── northwind_data.py          # Northwind model, seed SQL, 36 cheat sheet examples (1,649 lines)
-├── nlq_eval.py                # Eval scoring framework — 7 dimensions (478 lines)
-├── eval_cases.json            # 47 eval test cases (23 Northwind + 24 ETF)
+├── nlq_eval.py                # Eval scoring framework — 9 dimensions (540+ lines)
+├── eval_cases.json            # 59 eval test cases (23 Northwind + 24 ETF + 12 decline)
 ├── tests/
 │   ├── test_northwind_cheatsheet.py  # 36 parametrized cheat sheet tests
 │   └── test_nlq_eval.py             # Scoring function unit tests
