@@ -1160,13 +1160,23 @@ with tab_eval:
     )
 
     # ── Controls ──────────────────────────────────────────────────────────────
+    # Build domain filter options: All / domain names / individual case IDs
+    _all_cases_path = os.path.join(os.path.dirname(__file__), "eval_cases.json")
+    try:
+        _all_cases = nlq_eval.load_cases(_all_cases_path)
+        _case_ids = sorted(c.id for c in _all_cases)
+    except Exception:
+        _case_ids = []
+    _domain_options = ["All", "Northwind", "ETF"] + _case_ids
+
     eval_c1, eval_c2, eval_c3 = st.columns([1, 1, 2])
 
     with eval_c1:
         eval_domain = st.selectbox(
-            "Domain filter:",
-            ["All", "Northwind", "ETF"],
+            "Domain / case filter:",
+            _domain_options,
             key="eval_domain",
+            help="Pick a domain to run all its cases, or a specific case ID (e.g. etf-024) to run just that one.",
         )
     with eval_c2:
         eval_llm = st.selectbox(
@@ -1176,13 +1186,24 @@ with tab_eval:
             key="eval_llm_model",
         )
     with eval_c3:
-        eval_api_key = st.text_input(
-            "Anthropic API key (for LLM judge):",
-            type="password",
-            key="eval_api_key",
-            value=os.getenv("ANTHROPIC_API_KEY", ""),
-            help="Auto-loaded from .env if available. Claude Sonnet will score completeness/faithfulness/relevance.",
+        eval_judge_provider_label = st.selectbox(
+            "LLM judge provider:",
+            ["API key (Anthropic SDK)", "Claude subscription (CLI)"],
+            key="eval_judge_provider",
+            help="'API key' uses the Anthropic SDK and consumes credits. 'Claude subscription' shells out to the local `claude -p` CLI and uses your Claude subscription.",
         )
+        eval_judge_provider = "cli" if "CLI" in eval_judge_provider_label else "api"
+        if eval_judge_provider == "api":
+            eval_api_key = st.text_input(
+                "Anthropic API key:",
+                type="password",
+                key="eval_api_key",
+                value=os.getenv("ANTHROPIC_API_KEY", ""),
+                help="Auto-loaded from .env if available.",
+            )
+        else:
+            eval_api_key = ""
+            st.caption("Judge will use **Claude Sonnet 4.6** (`claude-sonnet-4-6`) via the local `claude -p --model sonnet` CLI — no API key needed.")
 
     btn_eval = st.button("🚀 Run Eval", type="primary", key="eval_run_btn")
 
@@ -1196,21 +1217,33 @@ with tab_eval:
     if btn_eval:
         eval_cases_path = os.path.join(os.path.dirname(__file__), "eval_cases.json")
         cases = nlq_eval.load_cases(eval_cases_path)
+        case_ids = {c.id for c in cases}
 
-        # Select model source based on domain
-        if eval_domain == "Northwind":
+        # Resolve the filter: domain name, single case ID, or "All"
+        single_case = None
+        if eval_domain in case_ids:
+            single_case = next(c for c in cases if c.id == eval_domain)
+
+        if single_case is not None:
+            eval_model_src = ETF_MODEL if single_case.domain == "ETF" else NORTHWIND_MODEL
+            seed_northwind = single_case.domain == "Northwind"
+            seed_etf = single_case.domain == "ETF"
+        elif eval_domain == "Northwind":
             eval_model_src = NORTHWIND_MODEL
+            seed_northwind, seed_etf = True, False
         elif eval_domain == "ETF":
             eval_model_src = ETF_MODEL
+            seed_northwind, seed_etf = False, True
         else:
-            # For "All", we need to run each case with its own model
+            # "All" — run each case with its own model
             eval_model_src = None
+            seed_northwind, seed_etf = True, True
 
         # Auto-seed databases so answer accuracy can execute queries
         seed_status = st.empty()
         seed_status.info("Seeding databases for answer accuracy scoring...")
         _seed_ok = True
-        if eval_domain in ("Northwind", "All"):
+        if seed_northwind:
             r = post_json(f"{ENGINE_URL}/engine/sql", {
                 "code": NORTHWIND_MODEL, "sql": NORTHWIND_SEED_SQL,
                 "runtime": "northwind::runtime::NorthwindRuntime",
@@ -1218,7 +1251,7 @@ with tab_eval:
             if not r.get("success"):
                 seed_status.warning(f"Northwind seed failed: {r.get('error', 'unknown')}")
                 _seed_ok = False
-        if eval_domain in ("ETF", "All"):
+        if seed_etf:
             r = post_json(f"{ENGINE_URL}/engine/sql", {
                 "code": ETF_MODEL, "sql": ETF_SEED_SQL,
                 "runtime": "etf::EtfRuntime",
@@ -1235,7 +1268,7 @@ with tab_eval:
             progress_bar.progress(i / total, text=f"Evaluating {case_id}… ({i}/{total})")
 
         if eval_model_src is not None:
-            # Single domain
+            # Single domain or single case
             eval_results = nlq_eval.run_eval(
                 cases,
                 eval_model_src,
@@ -1244,6 +1277,7 @@ with tab_eval:
                 api_key=eval_api_key,
                 domain_filter=eval_domain,
                 progress_callback=update_progress,
+                judge_provider=eval_judge_provider,
             )
         else:
             # All domains — run each case with the correct model
@@ -1256,6 +1290,7 @@ with tab_eval:
                     llm_model=eval_llm,
                     api_key=eval_api_key,
                     domain_filter="All",
+                    judge_provider=eval_judge_provider,
                 )
                 eval_results.extend(batch)
                 update_progress(i + 1, len(filtered), case.id)

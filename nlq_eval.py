@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 import urllib.request
 import urllib.error
@@ -264,17 +265,46 @@ def score_answer_accuracy(
     return 0.6 * col_overlap + 0.4 * row_ratio
 
 
+def _call_claude_cli(prompt: str, model: str = "sonnet") -> str:
+    """
+    Invoke the local Claude Code CLI (`claude -p`) as a subprocess and
+    return its stdout. Used as the non-API-key transport for the judge;
+    mirrors legend-intelligence's AnthropicCliClient pattern.
+
+    Raises FileNotFoundError if `claude` is not on PATH, or
+    subprocess.CalledProcessError if the CLI exits non-zero.
+    """
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--model", model],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+    return result.stdout
+
+
+def _parse_judge_json(text: str) -> dict:
+    """Strip markdown fences and parse the JSON body from a judge response."""
+    text = text.strip()
+    text = re.sub(r'^```\w*\n?', '', text).rstrip('`').strip()
+    return json.loads(text)
+
+
 def llm_judge(
     question: str,
     ref_query: str,
     gen_query: str,
     api_key: str,
     model: str = "claude-sonnet-4-6",
+    provider: str = "api",
 ) -> tuple[float, float, float, str]:
     """
     Use Claude as a judge to score the generated query vs reference.
     Returns (completeness, faithfulness, relevance, rationale).
-    Scores are 1-5.
+    Scores are 1-5. `provider` is "api" (Anthropic SDK + api_key) or
+    "cli" (local `claude -p` subprocess, uses the user's Claude
+    subscription).
     """
     judge_prompt = f"""You are evaluating the quality of a generated Pure query against a reference query for a natural language question.
 
@@ -298,24 +328,28 @@ Return your response as JSON only, no markdown:
 {{"completeness": <int>, "faithfulness": <int>, "relevance": <int>, "rationale": "<brief explanation>"}}"""
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": judge_prompt}],
-        )
-        text = response.content[0].text.strip()
-        # Parse JSON from response
-        # Strip markdown code fences if present
-        text = re.sub(r'^```\w*\n?', '', text).rstrip('`').strip()
-        result = json.loads(text)
+        if provider == "cli":
+            text = _call_claude_cli(judge_prompt, model="sonnet")
+        else:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=512,
+                messages=[{"role": "user", "content": judge_prompt}],
+            )
+            text = response.content[0].text
+        result = _parse_judge_json(text)
         return (
             float(result.get("completeness", 3)),
             float(result.get("faithfulness", 3)),
             float(result.get("relevance", 3)),
             result.get("rationale", ""),
         )
+    except FileNotFoundError:
+        return 3.0, 3.0, 3.0, "Judge error: `claude` CLI not found on PATH"
+    except subprocess.CalledProcessError as e:
+        return 3.0, 3.0, 3.0, f"Judge error: claude CLI exited {e.returncode}: {(e.stderr or '')[:200]}"
     except Exception as e:
         return 3.0, 3.0, 3.0, f"Judge error: {e}"
 
@@ -325,10 +359,11 @@ def score_follow_up_usefulness(
     follow_up_question: str,
     api_key: str,
     model: str = "claude-sonnet-4-6",
+    provider: str = "api",
 ) -> float:
     """
     Use Claude as a judge to score how useful a follow-up question is.
-    Returns a score from 1-5.
+    Returns a score from 1-5. `provider` is "api" or "cli" (see llm_judge).
     """
     judge_prompt = f"""You are evaluating the quality of a follow-up question that an NLQ system asked when it could not answer a user's question.
 
@@ -348,16 +383,18 @@ Return your response as JSON only, no markdown:
 {{"usefulness": <int>, "rationale": "<brief explanation>"}}"""
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=model,
-            max_tokens=256,
-            messages=[{"role": "user", "content": judge_prompt}],
-        )
-        text = response.content[0].text.strip()
-        text = re.sub(r'^```\w*\n?', '', text).rstrip('`').strip()
-        result = json.loads(text)
+        if provider == "cli":
+            text = _call_claude_cli(judge_prompt, model="sonnet")
+        else:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=256,
+                messages=[{"role": "user", "content": judge_prompt}],
+            )
+            text = response.content[0].text
+        result = _parse_judge_json(text)
         return float(result.get("usefulness", 3))
     except Exception:
         return 3.0
@@ -444,15 +481,26 @@ def run_eval(
     api_key: str = "",
     domain_filter: str = "",
     progress_callback=None,
+    judge_provider: str = "api",
 ) -> list[EvalResult]:
     """
     Run evaluation across all cases.
     Calls NLQ endpoint, scores each case, returns list of EvalResult.
     progress_callback(i, total, case_id) is called after each case if provided.
+
+    `domain_filter` is polymorphic:
+      - "" or "All" → no filter
+      - a domain name ("Northwind", "ETF") → filter by case.domain
+      - an exact case ID ("etf-024", "nw-d05")     → filter to that single case
+    `judge_provider` selects the LLM judge transport: "api" or "cli".
     """
     filtered = cases
     if domain_filter and domain_filter != "All":
-        filtered = [c for c in cases if c.domain == domain_filter]
+        case_ids = {c.id for c in cases}
+        if domain_filter in case_ids:
+            filtered = [c for c in cases if c.id == domain_filter]
+        else:
+            filtered = [c for c in cases if c.domain == domain_filter]
 
     results = []
     for i, case in enumerate(filtered):
@@ -475,9 +523,10 @@ def run_eval(
         if case.expect_decline:
             result.follow_up_triggered = bool(nlq_resp.get("cannotAnswer", False))
             follow_up_q = nlq_resp.get("followUpQuestion", "")
-            if result.follow_up_triggered and follow_up_q and api_key:
+            judge_available = judge_provider == "cli" or bool(api_key)
+            if result.follow_up_triggered and follow_up_q and judge_available:
                 result.follow_up_usefulness = score_follow_up_usefulness(
-                    case.question, follow_up_q, api_key
+                    case.question, follow_up_q, api_key, provider=judge_provider
                 )
             elif result.follow_up_triggered:
                 result.follow_up_usefulness = 3.0  # default when no judge
@@ -520,10 +569,12 @@ def run_eval(
                 model_src, ref_query, gen_query, engine_url
             )
 
-        # LLM judge (only if API key is provided)
-        if api_key and ref_query and gen_query:
+        # LLM judge (API key for "api" provider, or always available for "cli")
+        judge_available = judge_provider == "cli" or bool(api_key)
+        if judge_available and ref_query and gen_query:
             comp, faith, rel, rationale = llm_judge(
-                case.question, ref_query, gen_query, api_key
+                case.question, ref_query, gen_query, api_key,
+                provider=judge_provider,
             )
             result.judge_completeness = comp
             result.judge_faithfulness = faith
@@ -534,7 +585,7 @@ def run_eval(
             result.judge_completeness = 3.0
             result.judge_faithfulness = 3.0
             result.judge_relevance = 3.0
-            if not api_key:
+            if not judge_available:
                 reason = "No API key provided"
             elif not gen_query:
                 reason = "Engine returned no query (likely declined); nothing to judge"
