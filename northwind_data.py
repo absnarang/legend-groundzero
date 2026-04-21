@@ -933,7 +933,65 @@ northwind::model::Order.all()
 
     # ── 4. EXTEND (derived columns) ───────────────────────────────────────────
 
-    "15 · extend — price rank within category (TDS)": (
+    "15 · extend — derived column (row-level unit conversion)": (
+        "Extend",
+        "Add a derived column by transforming a single value per row (no window).",
+        """\
+northwind::model::Product.all()
+  ->project(
+      [ p | $p.productName, p | $p.unitPrice ],
+      ['productName', 'unitPrice']
+    )
+  ->extend(~unitPriceCents: { row | $row.unitPrice * 100 })""",
+        "**Signature:** `->extend(~alias: { row | expr })`\n\n"
+        "**Row-level form:** The single-parameter lambda `{ row | ... }` runs once per row "
+        "and produces a scalar value. `$row.col` reads any projected column — this is how you "
+        "refer to existing TDS values inside the lambda.\n\n"
+        "**When to use:** Unit conversions (dollars → cents, ratios → basis points), "
+        "flag columns (`$row.discontinued == 1`), or any per-row arithmetic that doesn't need "
+        "neighboring rows. This is what the NLQ pipeline generates for questions like "
+        "\"show expense ratio in basis points\".\n\n"
+        "**Why not put the arithmetic inside `project`?** Pure's `project` only extracts raw "
+        "columns via lambdas like `p | $p.unitPrice`. Arithmetic must move to `extend`.\n\n"
+        "**vs windowed extend:** The windowed form uses `->extend(over(~partition, ~order), "
+        "~alias:{p,w,r|...})` with a three-parameter lambda and needs information from other "
+        "rows (rank, running totals, lag/lead). Row-level extend needs only the current row.",
+        True,
+    ),
+
+    "16 · extend — derived column (two-column arithmetic)": (
+        "Extend",
+        "Compute a per-row value from multiple projected columns.",
+        """\
+northwind::model::OrderDetail.all()
+  ->project(
+      [
+        d | $d.orderId,
+        d | $d.product.productName,
+        d | $d.quantity,
+        d | $d.unitPrice
+      ],
+      ['orderId', 'product', 'quantity', 'unitPrice']
+    )
+  ->extend(~lineTotal: { row | $row.quantity * $row.unitPrice })""",
+        "**Signature:** `->extend(~alias: { row | exprOverMultipleCols })`\n\n"
+        "**Multi-column arithmetic:** `{ row | $row.quantity * $row.unitPrice }` combines "
+        "two projected columns into a derived value. Any column that appears in the "
+        "preceding `project` is reachable via `$row.<alias>`.\n\n"
+        "**Projection first, then extend:** Both `quantity` and `unitPrice` must be projected "
+        "before they can be referenced. Association-navigated columns (like "
+        "`$d.product.productName`) work the same way once projected.\n\n"
+        "**Typical uses:** Line totals, margin calculations, discount-adjusted prices, "
+        "ratios between two measures. Chain multiple `->extend(...)` calls to build up "
+        "several derived columns.\n\n"
+        "**vs windowed extend:** Both forms live on the same `->extend`, but the row-level "
+        "form is simpler and the right starting point. Reach for the windowed form "
+        "(`over(...)`, `{p,w,r|...}`) only when the computation depends on other rows — "
+        "rank, percentile, running total, lag/lead.",
+        True,
+    ),
+
+    "17 · extend — price rank within category (TDS)": (
         "Extend",
         "Add a window-computed rank column to inline TDS data.",
         """\
@@ -966,7 +1024,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "16 · extend — running revenue by category (TDS)": (
+    "18 · extend — running revenue by category (TDS)": (
         "Extend",
         "Compute a running cumulative sum within each category partition.",
         """\
@@ -1000,7 +1058,7 @@ northwind::model::Order.all()
 
     # ── 5. WINDOW FUNCTIONS ───────────────────────────────────────────────────
 
-    "17 · window RANK — within partition": (
+    "19 · window RANK — within partition": (
         "Window",
         "Rank each row within a partition, ordered by a key. Gaps for ties.",
         """\
@@ -1034,7 +1092,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "18 · window DENSE_RANK — no gaps on ties": (
+    "20 · window DENSE_RANK — no gaps on ties": (
         "Window",
         "Like RANK but consecutive ranks — no gaps when there are ties.",
         """\
@@ -1064,7 +1122,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "19 · window LAG — look back one row": (
+    "21 · window LAG — look back one row": (
         "Window",
         "Access the previous row's value within the same partition.",
         """\
@@ -1094,7 +1152,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "20 · window LEAD — look ahead one row": (
+    "22 · window LEAD — look ahead one row": (
         "Window",
         "Access the next row's value within the same partition.",
         """\
@@ -1124,7 +1182,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "21 · window running SUM — cumulative total": (
+    "23 · window running SUM — cumulative total": (
         "Window",
         "Compute a running (cumulative) total within a partition.",
         """\
@@ -1157,7 +1215,7 @@ northwind::model::Order.all()
 
     # ── 6. ASOF JOIN ─────────────────────────────────────────────────────────
 
-    "22 · asOfJoin — latest quote per trade (time)": (
+    "24 · asOfJoin — latest quote per trade (time)": (
         "AsOf Join",
         "For each trade, find the most recent quote that came BEFORE it.",
         """\
@@ -1195,7 +1253,7 @@ northwind::model::Order.all()
         False,
     ),
 
-    "23 · asOfJoin — simple (time only, no equality)": (
+    "25 · asOfJoin — simple (time only, no equality)": (
         "AsOf Join",
         "AsOf join on time only — no additional equality filter.",
         """\
@@ -1232,7 +1290,7 @@ northwind::model::Order.all()
 
     # ── Column manipulation ────────────────────────────────────────────────────
 
-    "24 · rename — rename a TDS column": (
+    "26 · rename — rename a TDS column": (
         "Column Manipulation",
         "Rename one column in a TDS without touching any other columns.",
         """\
@@ -1254,7 +1312,7 @@ northwind::model::Product.all()
         True,
     ),
 
-    "25 · select — narrow columns from a TDS": (
+    "27 · select — narrow columns from a TDS": (
         "Column Manipulation",
         "Drop unwanted columns by selecting only the ones you need.",
         """\
@@ -1278,7 +1336,7 @@ northwind::model::Product.all()
 
     # ── Set operations ─────────────────────────────────────────────────────────
 
-    "26 · concatenate — union two TDS vertically": (
+    "28 · concatenate — union two TDS vertically": (
         "Set Operations",
         "Stack two TDS with identical schemas on top of each other (UNION ALL).",
         """\
@@ -1306,7 +1364,7 @@ northwind::model::Product.all()
 
     # ── Explicit join ──────────────────────────────────────────────────────────
 
-    "27 · join — INNER join on predicate": (
+    "29 · join — INNER join on predicate": (
         "Joins",
         "Explicit INNER join on an arbitrary boolean predicate — only matching rows on both sides survive.",
         """\
@@ -1344,7 +1402,7 @@ northwind::model::Product.all()
         False,
     ),
 
-    "28 · join — LEFT join (keep all left rows)": (
+    "30 · join — LEFT join (keep all left rows)": (
         "Joins",
         "LEFT join preserves every left row; unmatched rows get null right-side columns.",
         """\
@@ -1379,7 +1437,7 @@ northwind::model::Product.all()
 
     # ── Slicing ────────────────────────────────────────────────────────────────
 
-    "29 · drop — skip the first N rows": (
+    "31 · drop — skip the first N rows": (
         "Slicing",
         "Remove the first N rows from a sorted TDS — the complement of take().",
         """\
@@ -1400,7 +1458,7 @@ northwind::model::Product.all()
         True,
     ),
 
-    "30 · slice — rows in a half-open range [start, stop)": (
+    "32 · slice — rows in a half-open range [start, stop)": (
         "Slicing",
         "Extract a window of rows by 0-based index range — useful for pagination.",
         """\
@@ -1424,7 +1482,7 @@ northwind::model::Product.all()
         True,
     ),
 
-    "31 · first — single top row after sort": (
+    "33 · first — single top row after sort": (
         "Slicing",
         "Return exactly one row — the first row of the relation after sorting.",
         """\
@@ -1448,7 +1506,7 @@ northwind::model::Product.all()
 
     # ── Window functions (additional) ──────────────────────────────────────────
 
-    "32 · window rowNumber — sequential position in partition": (
+    "34 · window rowNumber — sequential position in partition": (
         "Window Functions",
         "Assign a 1-based sequential row number within each partition, ordered by the window spec.",
         """\
@@ -1477,7 +1535,7 @@ northwind::model::Product.all()
         False,
     ),
 
-    "33 · window ntile — divide rows into N equal buckets": (
+    "35 · window ntile — divide rows into N equal buckets": (
         "Window Functions",
         "Assign each row to one of N equal-sized buckets (tiles) ordered by the window spec.",
         """\
@@ -1509,7 +1567,7 @@ northwind::model::Product.all()
         False,
     ),
 
-    "34 · window percentRank — relative rank as a fraction": (
+    "36 · window percentRank — relative rank as a fraction": (
         "Window Functions",
         "Compute each row's relative rank within its partition as a float in [0.0, 1.0].",
         """\
@@ -1540,7 +1598,7 @@ northwind::model::Product.all()
         False,
     ),
 
-    "35 · window cumulativeDistribution — fraction of rows ≤ current": (
+    "37 · window cumulativeDistribution — fraction of rows ≤ current": (
         "Window Functions",
         "For each row, compute the fraction of rows in the partition with value ≤ the current row's value.",
         """\
@@ -1572,7 +1630,7 @@ northwind::model::Product.all()
 
     # ── Variant / flatten ──────────────────────────────────────────────────────
 
-    "36 · flatten — explode array column into rows (reference)": (
+    "38 · flatten — explode array column into rows (reference)": (
         "Variant / Flatten",
         "Unnest an array-valued column so each element becomes its own row. "
         "⚠ Requires lateral + Variant support — reference syntax only in this playground.",
